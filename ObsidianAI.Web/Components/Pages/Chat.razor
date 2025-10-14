@@ -1,4 +1,5 @@
 @page "/"
+@rendermode InteractiveServer
 @using ObsidianAI.Web.Models
 @using ObsidianAI.Web.Services
 @using ObsidianAI.Web.Components.Shared
@@ -10,9 +11,9 @@
 <div class="header">
     <h1>🧠 Obsidian AI</h1>
     <div class="header-actions">
-        <button class="btn-icon" type="button" aria-label="Open Vault">📁 Vault</button>
-        <button class="btn-icon" type="button" aria-label="Open Settings">⚙️</button>
-        <button class="btn-icon" type="button" aria-label="Show History">History</button>
+        <button class="btn-icon" type="button" aria-label="Open Vault" @onclick="OpenVault">📁 Vault</button>
+        <button class="btn-icon" type="button" aria-label="Open Settings" @onclick="OpenSettings">⚙️</button>
+        <button class="btn-icon" type="button" aria-label="Show History" @onclick="ShowHistory">History</button>
     </div>
 </div>
 
@@ -441,5 +442,41 @@
         {
             await hubConnection.DisposeAsync();
         }
+    }
+
+    private void OpenVault()
+    {
+        var vaultMessage = new ChatMessage
+        {
+            Content = "Vault feature is coming soon!",
+            Sender = MessageSender.AI,
+            Timestamp = DateTime.UtcNow
+        };
+        conversationHistory.Add(vaultMessage);
+        StateHasChanged();
+    }
+
+    private void OpenSettings()
+    {
+        var settingsMessage = new ChatMessage
+        {
+            Content = "Settings feature is coming soon!",
+            Sender = MessageSender.AI,
+            Timestamp = DateTime.UtcNow
+        };
+        conversationHistory.Add(settingsMessage);
+        StateHasChanged();
+    }
+
+    private void ShowHistory()
+    {
+        var historyMessage = new ChatMessage
+        {
+            Content = "History feature is coming soon!",
+            Sender = MessageSender.AI,
+            Timestamp = DateTime.UtcNow
+        };
+        conversationHistory.Add(historyMessage);
+        StateHasChanged();
     }
 }
