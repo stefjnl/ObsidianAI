@@ -20,7 +20,9 @@ namespace ObsidianAI.Api.Services
         private readonly ILlmClientFactory _llmFactory;
         private readonly McpClient _mcpClient;
         private readonly IChatClient _chatClient;
-        private readonly ChatClientAgent _agent;
+        private ChatClientAgent? _agent;
+        private readonly SemaphoreSlim _semaphore = new(1, 1);
+        private volatile bool _isInitialized = false;
 
         /// <summary>
         /// Initializes the assistant service, creating the chat client and agent with available MCP tools.
@@ -33,15 +35,34 @@ namespace ObsidianAI.Api.Services
             _mcpClient = mcpClient ?? throw new ArgumentNullException(nameof(mcpClient));
 
             _chatClient = _llmFactory.CreateChatClient();
+        }
 
-            // Fetch tools synchronously during construction to wire them into the agent.
-            var tools = _mcpClient.ListToolsAsync().GetAwaiter().GetResult();
+        private async Task InitializeAgentAsync()
+        {
+            if (_isInitialized)
+                return;
 
-            _agent = _chatClient.CreateAIAgent(
-                name: "ObsidianAssistant",
-                instructions: "You help users query and organize their Obsidian vault. Use the available tools to search, read, and modify notes.",
-                tools: [.. tools.Cast<AITool>()]
-            );
+            await _semaphore.WaitAsync();
+            try
+            {
+                if (!_isInitialized)
+                {
+                    // Fetch tools asynchronously
+                    var tools = await _mcpClient.ListToolsAsync();
+
+                    _agent = _chatClient.CreateAIAgent(
+                        name: "ObsidianAssistant",
+                        instructions: "You help users query and organize their Obsidian vault. Use the available tools to search, read, and modify notes.",
+                        tools: [.. tools.Cast<AITool>()]
+                    );
+                    
+                    _isInitialized = true;
+                }
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
         }
 
         /// <summary>
@@ -53,7 +74,11 @@ namespace ObsidianAI.Api.Services
         public async Task<string> ChatAsync(ChatRequest request, CancellationToken cancellationToken = default)
         {
             if (request is null) throw new ArgumentNullException(nameof(request));
-            var response = await _agent.RunAsync(request.Message);
+            
+            // Ensure agent is initialized
+            await InitializeAgentAsync();
+            
+            var response = await _agent!.RunAsync(request.Message);
             return response?.Text ?? string.Empty;
         }
 
@@ -69,7 +94,10 @@ namespace ObsidianAI.Api.Services
         {
             if (request is null) throw new ArgumentNullException(nameof(request));
 
-            var responseStream = _agent.RunStreamingAsync(request.Message);
+            // Ensure agent is initialized
+            await InitializeAgentAsync();
+            
+            var responseStream = _agent!.RunStreamingAsync(request.Message);
             var enumerableResponseStream = (IAsyncEnumerable<dynamic>)responseStream;
 
             await foreach (var update in enumerableResponseStream.WithCancellation(cancellationToken))

@@ -20,16 +20,11 @@ builder.Services.AddSingleton<ILlmClientFactory>(sp =>
         : new LmStudioClientFactory(configuration);
 });
 
-// Register MCP client as singleton (created at startup)
-builder.Services.AddSingleton<McpClient>(sp =>
-{
-    var options = new HttpClientTransportOptions
-    {
-        Endpoint = new Uri("http://localhost:8033/mcp")
-    };
-    var transport = new HttpClientTransport(options);
-    return McpClient.CreateAsync(transport).GetAwaiter().GetResult();
-});
+// Register MCP client as singleton using async factory pattern
+// We'll create a wrapper service that handles async initialization
+builder.Services.AddSingleton<McpClientService>();
+builder.Services.AddSingleton<McpClient>(sp => sp.GetRequiredService<McpClientService>().Client);
+builder.Services.AddHostedService<McpClientService>(); // Register as hosted service for proper startup initialization
 
 // Register assistant service as singleton
 builder.Services.AddSingleton<ObsidianAssistantService>();
