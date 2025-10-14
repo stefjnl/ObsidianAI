@@ -361,58 +361,138 @@
 
     private Task ParseResponseForComponents(string response)
     {
-        // Basic parsing logic to detect action cards or search results
-        if (response.Contains("confirm", StringComparison.OrdinalIgnoreCase) &&
-        response.Contains("move", StringComparison.OrdinalIgnoreCase))
-        {
-            // Extract planned actions (simplified parsing)
-            var actions = new List<PlannedAction>();
-            var lines = response.Split('\n');
+        // Expanded parsing logic to detect a broader range of file operations and confirmation prompts
+        var actions = new List<PlannedAction>();
+        var lines = response.Split('\n');
 
-            foreach (var line in lines)
+        // Detect phrases indicating a confirmation request
+        bool asksForConfirmation =
+            response.Contains("confirm", StringComparison.OrdinalIgnoreCase) ||
+            response.Contains("confirmation", StringComparison.OrdinalIgnoreCase) ||
+            response.Contains("are you sure", StringComparison.OrdinalIgnoreCase) ||
+            response.Contains("proceed", StringComparison.OrdinalIgnoreCase);
+
+        foreach (var line in lines)
+        {
+            var lower = line.ToLowerInvariant();
+            var paths = ExtractFilePaths(line);
+
+            // Move operations (existing support)
+            if (lower.Contains("move") || line.Contains("→"))
             {
-                if (line.Contains("→") || line.Contains("move", StringComparison.OrdinalIgnoreCase))
+                actions.Add(new PlannedAction
+                {
+                    Icon = "📄",
+                    Description = line.Trim(),
+                    Type = ActionType.Move,
+                    Source = ExtractSourcePath(line),
+                    Destination = ExtractDestinationPath(line)
+                });
+                continue;
+            }
+
+            // Create operations: "create <file>"
+            if (lower.Contains("create") && paths.Any())
+            {
+                foreach (var p in paths)
+                {
+                    actions.Add(new PlannedAction
+                    {
+                        Icon = "🆕",
+                        Description = line.Trim(),
+                        Type = ActionType.Create,
+                        Source = p
+                    });
+                }
+                continue;
+            }
+
+            // Append operations: "append <file>"
+            if (lower.Contains("append") && paths.Any())
+            {
+                foreach (var p in paths)
+                {
+                    actions.Add(new PlannedAction
+                    {
+                        Icon = "➕",
+                        Description = line.Trim(),
+                        Type = ActionType.Other,
+                        Source = p
+                    });
+                }
+                continue;
+            }
+
+            // Write operations: "write <file>"
+            if (lower.Contains("write") && paths.Any())
+            {
+                foreach (var p in paths)
+                {
+                    actions.Add(new PlannedAction
+                    {
+                        Icon = "✍️",
+                        Description = line.Trim(),
+                        Type = ActionType.Other,
+                        Source = p
+                    });
+                }
+                continue;
+            }
+
+            // Generic confirmation with file paths (no specific verb detected)
+            if (asksForConfirmation && paths.Any())
+            {
+                foreach (var p in paths)
                 {
                     actions.Add(new PlannedAction
                     {
                         Icon = "📄",
-                        Description = line.Trim(),
-                        Type = ActionType.Move,
-                        Source = ExtractSourcePath(line),
-                        Destination = ExtractDestinationPath(line)
+                        Description = $"Confirm operation for {p}",
+                        Type = ActionType.Other,
+                        Source = p
                     });
                 }
             }
+        }
 
-            if (actions.Any())
+        // If actions were detected, construct an ActionCard
+        if (actions.Any())
+        {
+            // Deduce a primary operation type for the card
+            ActionOperationType opType;
+            if (actions.All(a => a.Type == ActionType.Move))
+                opType = ActionOperationType.Move;
+            else if (actions.All(a => a.Type == ActionType.Create))
+                opType = ActionOperationType.Create;
+            else
+                opType = ActionOperationType.Other;
+
+            var actionCard = new ActionCardData
             {
-                var actionCard = new ActionCardData
-                {
-                    Title = "Planned Actions",
-                    Actions = actions,
-                    HasMoreActions = actions.Count > 3,
-                    HiddenActionCount = Math.Max(0, actions.Count - 3),
-                    Status = ActionCardStatus.Pending,
-                    OperationType = ActionOperationType.Move
-                };
+                Title = "Planned File Operations",
+                Actions = actions,
+                HasMoreActions = actions.Count > 3,
+                HiddenActionCount = Math.Max(0, actions.Count - 3),
+                Status = ActionCardStatus.Pending,
+                OperationType = opType
+            };
 
-                // Update the current AI message with the action card
-                if (currentAiMessage != null)
-                {
-                    var index = conversationHistory.IndexOf(currentAiMessage);
-                    currentAiMessage = currentAiMessage with { ActionCard = actionCard };
-                    conversationHistory[index] = currentAiMessage;
-                }
+            // Update the current AI message with the action card
+            if (currentAiMessage != null)
+            {
+                var index = conversationHistory.IndexOf(currentAiMessage);
+                currentAiMessage = currentAiMessage with { ActionCard = actionCard, ProcessingType = ProcessingType.None };
+                conversationHistory[index] = currentAiMessage;
             }
         }
         else if (response.Contains("found", StringComparison.OrdinalIgnoreCase) ||
-        response.Contains("search", StringComparison.OrdinalIgnoreCase))
+                 response.Contains("search", StringComparison.OrdinalIgnoreCase))
         {
             // Extract search results (simplified parsing)
             var searchResults = new List<SearchResultData>();
-            var lines = response.Split('\n');
+            var lines2 = response.Split('\n');
 
-            foreach (var line in lines)
+            foreach (var line in lines2)
             {
                 if (line.Contains(".md") || line.Contains(".txt"))
                 {
@@ -462,6 +542,34 @@
         // Simple extraction logic - would be more sophisticated in a real implementation
         var match = System.Text.RegularExpressions.Regex.Match(line, @"→\s*(\S+)");
         return match.Success ? match.Groups[1].Value : string.Empty;
+    }
+
+    private List<string> ExtractFilePaths(string text)
+    {
+        var results = new List<string>();
+
+        // Windows absolute path with drive letter and extension
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                     text, @"[A-Za-z]:\\[^\s:""]+\.[\w]+"))
+        {
+            results.Add(m.Value);
+        }
+
+        // Relative or absolute paths with slashes/backslashes and an extension
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                     text, @"(?:^|[\s""'])\.{0,2}[\\/][^\s:""]+\.[\w]+"))
+        {
+            results.Add(m.Value.Trim().Trim('"', '\''));
+        }
+
+        // Pure forward slash absolute paths with extension
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                     text, @"(?:^|[\s""'])(?:/[^:\s""']+\.[\w]+)"))
+        {
+            results.Add(m.Value.Trim().Trim('"', '\''));
+        }
+
+        return results.Distinct().ToList();
     }
 
     private async Task ScrollToBottom()
