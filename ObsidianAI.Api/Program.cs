@@ -63,8 +63,6 @@ app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, Obs
         await context.Response.Body.WriteAsync(data);
         await context.Response.Body.FlushAsync();
     }
-
-    return Results.Ok();
 });
 
 app.MapPost("/vault/search", (SearchRequest request) =>

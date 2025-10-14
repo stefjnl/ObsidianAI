@@ -40,16 +40,20 @@ public class ChatHub : Hub
             using var reader = new StreamReader(stream);
 
             var fullResponse = new StringBuilder();
-            var buffer = new char[1];
+            var buffer = new char[128];  // Larger buffer for batching tokens
+            int charsRead;
 
-            // Stream character by character
-            while (await reader.ReadAsync(buffer, 0, 1) > 0)
+            // Stream in chunks to reduce SignalR overhead while maintaining streaming feel
+            while ((charsRead = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
             {
-                var character = buffer[0].ToString();
-                fullResponse.Append(character);
+                var chunk = new string(buffer, 0, charsRead);
+                fullResponse.Append(chunk);
 
-                // Send each character as a token
-                await Clients.Caller.SendAsync("ReceiveToken", character);
+                // Send chunk instead of single character
+                await Clients.Caller.SendAsync("ReceiveToken", chunk);
+
+                // Small delay to prevent UI overload
+                await Task.Delay(10);
             }
 
             // Send completion event
