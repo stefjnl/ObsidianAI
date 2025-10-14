@@ -1,0 +1,104 @@
+## Ignore Visual Studio files
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+
+## Ignore build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+build/
+bld/
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+
+## Ignore generated files
+*.VC.db
+*.VC.VC.opendb
+*.VC.opendb
+*.VC.sln.cache
+*.VC.sln.ide
+*.VC.sln.lock
+*.VC.suo
+*.VC.user
+*.VC.userosscache
+*.VC.userprefs
+*.VC.db-shm
+*.VC.db-wal
+
+## Ignore NuGet packages
+*.nupkg
+packages/
+[Nn]uget/
+[Nn]uGet/
+[Nn]UGET/
+
+## Ignore .NET Core
+*.dotCover
+*.dotCover.snapshot
+*.coverage
+*.gcov
+*.lcov
+coverage/
+coverage.json
+*.profdata
+*.profraw
+
+## Ignore ASP.NET Core
+appsettings*.json
+appsettings*.xml
+appsettings*.yaml
+appsettings*.yml
+appsettings*.config
+*.Web.Publish.xml
+**/Web.Publish.xml
+publish/
+Publish/
+[Pp]ublish/
+[Pp]ublished/
+publishoutput/
+PublishOutput/
+publishprofiles/
+PublishProfiles/
+[Pp]ublishProfiles/
+[Pp]ublishProfiles/.*
+
+## Ignore Aspire
+**/AppHost.AppHost.exe
+**/AppHost.AppHost.deps.json
+**/AppHost.AppHost.runtimeconfig.json
+**/apphost.exe
+
+## Ignore local configuration
+local.settings.json
+secrets.json
+appsettings.local.json
+
+## Ignore temporary files
+*~
+~$*
+*.tmp
+*.temp
+Thumbs.db
+.DS_Store
+*.swp
+*.swo
+
+## Ignore OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Thumbs.db:encryptable
+[Uu]sage
