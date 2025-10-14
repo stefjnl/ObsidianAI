@@ -33,6 +33,14 @@ namespace ObsidianAI.Web.Models
         public ActionCardData? ActionCard { get; init; }
         
         /// <summary>
+        /// Optional file operation result associated with this message
+        /// </summary>
+        /// <remarks>
+        /// When present, the chat UI will render a FileOperationResult component for this message.
+        /// </remarks>
+        public FileOperationResultData? FileOperationResult { get; init; }
+        
+        /// <summary>
         /// Optional search results associated with this message
         /// </summary>
         public List<SearchResultData> SearchResults { get; init; } = new();

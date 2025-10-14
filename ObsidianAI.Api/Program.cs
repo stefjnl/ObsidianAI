@@ -1,6 +1,7 @@
 using ModelContextProtocol.Client;
 using ObsidianAI.Api.Models;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using ObsidianAI.Api.Services;
 using System;
@@ -26,8 +27,22 @@ builder.Services.AddSingleton<McpClientService>();
 builder.Services.AddSingleton<McpClient>(sp => sp.GetRequiredService<McpClientService>().Client);
 builder.Services.AddHostedService<McpClientService>(); // Register as hosted service for proper startup initialization
 
-// Register assistant service as singleton
-builder.Services.AddSingleton<ObsidianAssistantService>();
+// Register assistant service as singleton with refined agent instructions
+builder.Services.AddSingleton<ObsidianAssistantService>(sp =>
+{
+    var llmFactory = sp.GetRequiredService<ILlmClientFactory>();
+    var mcpClient = sp.GetRequiredService<McpClient>();
+    var instructions = @"You help users manage their Obsidian vault.
+
+RULES:
+- Simple file creation (empty or with specified content): Execute directly, confirm after
+- File modification (append/update existing): Ask for confirmation FIRST
+- Bulk operations (move multiple files): ALWAYS show preview with confirmation
+- Destructive operations (delete): ALWAYS require explicit confirmation
+
+Be efficient. Don't ask unnecessary questions.";
+    return new ObsidianAssistantService(llmFactory, mcpClient, instructions);
+});
 
 var app = builder.Build();
 // Startup log for configured LLM provider and model
@@ -53,15 +68,20 @@ app.MapPost("/chat", async (ChatRequest request, ObsidianAssistantService assist
 
 app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, ObsidianAssistantService assistant) =>
 {
-    context.Response.ContentType = "text/plain";
+    context.Response.ContentType = "application/x-ndjson";
     context.Response.Headers.CacheControl = "no-cache";
     context.Response.Headers.Connection = "keep-alive";
 
-    await foreach (var chunk in assistant.StreamChatAsync(request, context.RequestAborted))
+    var options = new JsonSerializerOptions
     {
-        var data = Encoding.UTF8.GetBytes(chunk);
-        await context.Response.Body.WriteAsync(data);
-        await context.Response.Body.FlushAsync();
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    await foreach (var message in assistant.StreamChatAsync(request, context.RequestAborted))
+    {
+        var jsonMessage = JsonSerializer.Serialize(message, options);
+        await context.Response.WriteAsync(jsonMessage + "\n", context.RequestAborted);
+        await context.Response.Body.FlushAsync(context.RequestAborted);
     }
 });
 

@@ -13,6 +13,14 @@ public interface IChatService
     /// <param name="message">The message to send.</param>
     /// <returns>The response from the API.</returns>
     Task<string> SendMessageAsync(string message);
+
+    /// <summary>
+    /// Sends a message and gets a structured ChatMessage response, bypassing the streaming endpoint.
+    /// Used for simulating direct responses like file operations.
+    /// </summary>
+    /// <param name="message">The message to send.</param>
+    /// <returns>A ChatMessage object, potentially with component data.</returns>
+    Task<ChatMessage> SendMessageAndGetResponseAsync(string message);
     
     /// <summary>
     /// Searches the vault for content matching the query.

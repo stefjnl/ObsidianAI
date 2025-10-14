@@ -366,3 +366,56 @@ body {
         font-size: 14px;
     }
 }
+/* ==========================================================================
+   File Operation Result Component
+   ========================================================================== */
+
+.file-operation-result {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #e0e0e0; /* Softer border */
+    border-radius: 8px;       /* Consistent with other elements */
+    background: #fafafa;      /* Subtle background */
+    font-size: 14px;
+    color: #2c2c2c;
+}
+
+.file-operation-result .result-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.file-operation-result .result-icon[aria-hidden="true"] {
+    color: #4a9d5f; /* Success color */
+}
+
+.file-operation-result .result-icon[aria-hidden="true"]:not(.-success) {
+    color: #d64545; /* Error color */
+}
+
+.file-operation-result .result-message {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-operation-result .view-file-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #4a7c9d; /* Link color */
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.file-operation-result .view-file-btn:hover {
+    color: #5a8cad;
+    text-decoration: underline;
+}

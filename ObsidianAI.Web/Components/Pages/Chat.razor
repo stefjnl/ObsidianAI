@@ -32,8 +32,17 @@
     {
         @foreach (var message in conversationHistory)
         {
-            <MessageBubble Message="@message" OnActionConfirmed="HandleActionConfirmed"
-                OnActionCancelled="HandleActionCancelled" OnActionEdit="HandleActionEdit" />
+            if (message.FileOperationResult != null)
+            {
+                <div class="message-bubble-wrapper ai">
+                    <FileOperationResult Result="message.FileOperationResult" />
+                </div>
+            }
+            else
+            {
+                <MessageBubble Message="@message" OnActionConfirmed="HandleActionConfirmed"
+                    OnActionCancelled="HandleActionCancelled" OnActionEdit="HandleActionEdit" />
+            }
         }
     }
     else
@@ -209,10 +218,19 @@
 
         try
         {
-            if (hubConnection != null)
-            {
-                await hubConnection.SendAsync("StreamMessage", messageToSend);
-            }
+            // For testing, call the new direct method instead of SignalR streaming
+            var responseMessage = await ChatService.SendMessageAndGetResponseAsync(messageToSend);
+            
+            // Remove the processing placeholder
+            conversationHistory.Remove(currentAiMessage!);
+            
+            // Add the response from the service
+            conversationHistory.Add(responseMessage);
+
+            isProcessing = false;
+            currentAiMessage = null;
+            StateHasChanged();
+            await ScrollToBottom();
         }
         catch (Exception ex)
         {

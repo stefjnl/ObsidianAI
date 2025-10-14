@@ -50,6 +50,34 @@ public class ChatService : IChatService
             throw;
         }
     }
+
+    /// <summary>
+    /// Sends a message and gets a structured ChatMessage response for testing UI components.
+    /// </summary>
+    public Task<ChatMessage> SendMessageAndGetResponseAsync(string message)
+    {
+        _logger.LogInformation("Simulating a direct response for message: {Message}", message);
+
+        // Simulate a file operation result for testing purposes.
+        var fileOpResult = new FileOperationResultData
+        {
+            Success = true,
+            Operation = "File Modified",
+            FilePath = "Work/Project-Alpha/Meeting-Notes.md",
+            Message = "Appended content to file."
+        };
+
+        var responseMessage = new ChatMessage
+        {
+            Id = Guid.NewGuid().ToString(),
+            Content = "Here is the result of the file operation.",
+            Sender = MessageSender.AI,
+            Timestamp = DateTime.UtcNow,
+            FileOperationResult = fileOpResult
+        };
+
+        return Task.FromResult(responseMessage);
+    }
     
     /// <summary>
     /// Searches the vault for content matching the query.
