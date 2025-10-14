@@ -21,10 +21,8 @@
     {
         @foreach (var message in conversationHistory)
         {
-            <MessageBubble Message="@message" 
-                          OnActionConfirmed="HandleActionConfirmed" 
-                          OnActionCancelled="HandleActionCancelled" 
-                          OnActionEdit="HandleActionEdit" />
+            <MessageBubble Message="@message" OnActionConfirmed="HandleActionConfirmed"
+                OnActionCancelled="HandleActionCancelled" OnActionEdit="HandleActionEdit" />
         }
     }
     else
@@ -37,16 +35,10 @@
 
 <div class="input-area">
     <div class="input-wrapper">
-        <input type="text" class="input-field" 
-               placeholder="Type a message..." 
-               aria-label="Message input" 
-               @bind="currentMessage" 
-               @onkeypress="HandleKeyPress"
-               disabled="@isProcessing" />
-        <button class="btn-send" type="button" 
-                aria-label="Send message" 
-                @onclick="SendMessage"
-                disabled="@isProcessing || string.IsNullOrWhiteSpace(currentMessage)">
+        <input type="text" class="input-field" placeholder="Type a message..." aria-label="Message input"
+            @bind="currentMessage" @onkeypress="HandleKeyPress" disabled="@isProcessing" />
+        <button class="btn-send" type="button" aria-label="Send message" @onclick="SendMessage"
+            disabled="@isProcessing || string.IsNullOrWhiteSpace(currentMessage)">
             →
         </button>
     </div>
@@ -89,57 +81,57 @@
     private async Task InitializeSignalR()
     {
         hubConnection = new HubConnectionBuilder()
-            .WithUrl(NavigationManager.ToAbsoluteUri("/chathub"))
-            .WithAutomaticReconnect()
-            .Build();
+        .WithUrl(NavigationManager.ToAbsoluteUri("/chathub"))
+        .WithAutomaticReconnect()
+        .Build();
 
         hubConnection.On<string>("ReceiveToken", (token) =>
         {
             InvokeAsync(() =>
+    {
+            if (currentAiMessage != null)
             {
-                if (currentAiMessage != null)
-                {
-                    currentAiMessage = currentAiMessage with { Content = currentAiMessage.Content + token };
-                    StateHasChanged();
-                }
-            });
+                currentAiMessage = currentAiMessage with { Content = currentAiMessage.Content + token };
+                StateHasChanged();
+            }
+        });
         });
 
         hubConnection.On<string>("MessageComplete", (finalMessage) =>
         {
             InvokeAsync(async () =>
+    {
+            if (currentAiMessage != null)
             {
-                if (currentAiMessage != null)
-                {
-                    // Parse the message for action cards or search results
-                    await ParseResponseForComponents(finalMessage);
-                    
-                    currentAiMessage = currentAiMessage with { IsProcessing = false };
-                    currentAiMessage = null;
-                    isProcessing = false;
-                    StateHasChanged();
-                    await ScrollToBottom();
-                }
-            });
+            // Parse the message for action cards or search results
+                await ParseResponseForComponents(finalMessage);
+
+                currentAiMessage = currentAiMessage with { IsProcessing = false };
+                currentAiMessage = null;
+                isProcessing = false;
+                StateHasChanged();
+                await ScrollToBottom();
+            }
+        });
         });
 
         hubConnection.On<string>("Error", (error) =>
         {
             InvokeAsync(() =>
+    {
+            if (currentAiMessage != null)
             {
-                if (currentAiMessage != null)
+                currentAiMessage = new ChatMessage
                 {
-                    currentAiMessage = new ChatMessage
-                    {
-                        Content = $"Error: {error}",
-                        Sender = MessageSender.AI,
-                        Timestamp = DateTime.UtcNow
-                    };
-                    currentAiMessage = null;
-                    isProcessing = false;
-                    StateHasChanged();
-                }
-            });
+                    Content = $"Error: {error}",
+                    Sender = MessageSender.AI,
+                    Timestamp = DateTime.UtcNow
+                };
+                currentAiMessage = null;
+                isProcessing = false;
+                StateHasChanged();
+            }
+        });
         });
 
         await hubConnection.StartAsync();
@@ -199,7 +191,7 @@
                     Sender = MessageSender.AI,
                     Timestamp = DateTime.UtcNow
                 };
-                
+
                 conversationHistory.Remove(currentAiMessage);
                 conversationHistory.Add(errorMessage);
                 currentAiMessage = null;
@@ -238,11 +230,11 @@
                     Status = ActionCardStatus.Processing
                 }
             };
-            
+
             // Update in the list
             var index = conversationHistory.IndexOf(conversationHistory.First(m => m.ActionCard?.Id == actionId));
             conversationHistory[index] = message;
-            
+
             StateHasChanged();
 
             // Execute the action via the chat service
@@ -261,7 +253,7 @@
                 };
 
                 var response = await ChatService.ReorganizeAsync(request);
-                
+
                 // Update the action card with the result
                 message = message with
                 {
@@ -271,7 +263,7 @@
                         StatusMessage = response.Message
                     }
                 };
-                
+
                 conversationHistory[index] = message;
             }
             catch (Exception ex)
@@ -284,10 +276,10 @@
                         StatusMessage = $"Failed to execute actions: {ex.Message}"
                     }
                 };
-                
+
                 conversationHistory[index] = message;
             }
-            
+
             StateHasChanged();
         }
     }
@@ -307,11 +299,11 @@
                     StatusMessage = "Action cancelled by user"
                 }
             };
-            
+
             // Update in the list
             var index = conversationHistory.IndexOf(conversationHistory.First(m => m.ActionCard?.Id == actionId));
             conversationHistory[index] = message;
-            
+
             StateHasChanged();
         }
         return Task.CompletedTask;
@@ -327,7 +319,7 @@
             Sender = MessageSender.AI,
             Timestamp = DateTime.UtcNow
         };
-        
+
         conversationHistory.Add(editMessage);
         StateHasChanged();
         await ScrollToBottom();
@@ -336,13 +328,13 @@
     private async Task ParseResponseForComponents(string response)
     {
         // Basic parsing logic to detect action cards or search results
-        if (response.Contains("confirm", StringComparison.OrdinalIgnoreCase) && 
-            response.Contains("move", StringComparison.OrdinalIgnoreCase))
+        if (response.Contains("confirm", StringComparison.OrdinalIgnoreCase) &&
+        response.Contains("move", StringComparison.OrdinalIgnoreCase))
         {
             // Extract planned actions (simplified parsing)
             var actions = new List<PlannedAction>();
             var lines = response.Split('\n');
-            
+
             foreach (var line in lines)
             {
                 if (line.Contains("→") || line.Contains("move", StringComparison.OrdinalIgnoreCase))
@@ -357,7 +349,7 @@
                     });
                 }
             }
-            
+
             if (actions.Any())
             {
                 var actionCard = new ActionCardData
@@ -369,7 +361,7 @@
                     Status = ActionCardStatus.Pending,
                     OperationType = ActionOperationType.Move
                 };
-                
+
                 // Update the current AI message with the action card
                 if (currentAiMessage != null)
                 {
@@ -379,13 +371,13 @@
                 }
             }
         }
-        else if (response.Contains("found", StringComparison.OrdinalIgnoreCase) || 
-                 response.Contains("search", StringComparison.OrdinalIgnoreCase))
+        else if (response.Contains("found", StringComparison.OrdinalIgnoreCase) ||
+        response.Contains("search", StringComparison.OrdinalIgnoreCase))
         {
             // Extract search results (simplified parsing)
             var searchResults = new List<SearchResultData>();
             var lines = response.Split('\n');
-            
+
             foreach (var line in lines)
             {
                 if (line.Contains(".md") || line.Contains(".txt"))
@@ -405,15 +397,15 @@
                     }
                 }
             }
-            
+
             if (searchResults.Any())
             {
                 // Update the current AI message with search results
                 if (currentAiMessage != null)
                 {
                     var index = conversationHistory.IndexOf(currentAiMessage);
-                    currentAiMessage = currentAiMessage with 
-                    { 
+                    currentAiMessage = currentAiMessage with
+                    {
                         SearchResults = searchResults,
                         ProcessingType = ProcessingType.None
                     };
