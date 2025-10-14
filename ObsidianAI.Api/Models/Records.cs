@@ -1,8 +1,8 @@
 namespace ObsidianAI.Api.Models;
 
-record ChatRequest(string Message, List<ChatMessage>? History = null);
+public record ChatRequest(string Message, List<ChatMessage>? History = null);
 
-record ChatMessage(string Role, string Content);
+public record ChatMessage(string Role, string Content);
 
 public record SearchRequest(string Query);
 

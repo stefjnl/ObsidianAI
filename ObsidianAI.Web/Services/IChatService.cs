@@ -47,6 +47,11 @@ public interface IChatService
     /// <param name="sessionId">The session identifier.</param>
     /// <returns>A list of chat messages.</returns>
     Task<List<ChatMessage>> GetConversationHistoryAsync(string sessionId);
+        
+    /// <summary>
+    /// Gets the current LLM provider name from the backend.
+    /// </summary>
+    Task<string> GetLlmProviderAsync();
 }
 
 /// <summary>
