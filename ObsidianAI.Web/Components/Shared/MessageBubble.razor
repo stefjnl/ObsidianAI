@@ -1,0 +1,57 @@
+@using ObsidianAI.Web.Models
+
+<div class="message @(Message.Sender == MessageSender.User ? "user" : "")">
+    <div class="message-avatar" aria-hidden="true">
+        @(Message.Sender == MessageSender.User ? "👤" : "🤖")
+    </div>
+    <div class="message-content">
+        @Message.Content
+        
+        @if (Message.IsProcessing)
+        {
+            <div class="status-indicator">
+                <div class="spinner"></div>
+                @GetProcessingText(Message.ProcessingType)
+            </div>
+        }
+        
+        @if (Message.ActionCard != null)
+        {
+            <ActionCard Card="Message.ActionCard" OnConfirmed="OnActionConfirmed" OnCancelled="OnActionCancelled" OnEdit="OnActionEdit" />
+        }
+        
+        @if (Message.SearchResults.Any())
+        {
+            @foreach (var result in Message.SearchResults)
+            {
+                <SearchResult Result="result" />
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public ChatMessage Message { get; set; } = default!;
+    
+    [Parameter]
+    public EventCallback<string> OnActionConfirmed { get; set; }
+    
+    [Parameter]
+    public EventCallback<string> OnActionCancelled { get; set; }
+    
+    [Parameter]
+    public EventCallback<string> OnActionEdit { get; set; }
+    
+    private string GetProcessingText(ProcessingType processingType)
+    {
+        return processingType switch
+        {
+            ProcessingType.Searching => "🔍 Searching...",
+            ProcessingType.Writing => "✏️ Writing...",
+            ProcessingType.Reorganizing => "🔄 Reorganizing...",
+            ProcessingType.Thinking => "🤔 Thinking...",
+            _ => "Processing..."
+        };
+    }
+}

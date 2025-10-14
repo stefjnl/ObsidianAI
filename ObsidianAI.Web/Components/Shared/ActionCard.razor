@@ -1,0 +1,99 @@
+@using ObsidianAI.Web.Models
+
+<div class="action-card-container">
+    <div class="action-card-header">
+        📋 PLANNED ACTIONS
+    </div>
+    
+    <ul class="action-list">
+        @foreach (var action in DisplayedActions)
+        {
+            <li>
+                <span>@action.Icon</span>
+                <span>@action.Description</span>
+            </li>
+        }
+    </ul>
+    
+    @if (Card.HasMoreActions)
+    {
+        <span class="view-all" @onclick="ToggleShowAll">
+            ... and @Card.HiddenActionCount more @(ShowAllActions ? "· Show less" : "· View all")
+        </span>
+    }
+    
+    @if (Card.Status == ActionCardStatus.Pending)
+    {
+        <div class="action-buttons">
+            <button class="btn btn-confirm" type="button" @onclick="ConfirmAction">✓ Confirm</button>
+            <button class="btn btn-cancel" type="button" @onclick="CancelAction">✗ Cancel</button>
+            <button class="btn btn-secondary" type="button" @onclick="EditAction">Edit Selection</button>
+        </div>
+    }
+    else if (Card.Status == ActionCardStatus.Processing)
+    {
+        <div class="status-indicator">
+            <div class="spinner"></div>
+            Processing actions...
+        </div>
+    }
+    else if (Card.Status == ActionCardStatus.Completed)
+    {
+        <div class="status-indicator" style="color: #4a9d5f;">
+            ✓ @Card.StatusMessage
+        </div>
+    }
+    else if (Card.Status == ActionCardStatus.Cancelled)
+    {
+        <div class="status-indicator" style="color: #d64545;">
+            ✗ @Card.StatusMessage
+        </div>
+    }
+    else if (Card.Status == ActionCardStatus.Failed)
+    {
+        <div class="status-indicator" style="color: #d64545;">
+            ✗ @Card.StatusMessage
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public ActionCardData Card { get; set; } = default!;
+    
+    [Parameter]
+    public EventCallback<string> OnConfirmed { get; set; }
+    
+    [Parameter]
+    public EventCallback<string> OnCancelled { get; set; }
+    
+    [Parameter]
+    public EventCallback<string> OnEdit { get; set; }
+    
+    private bool ShowAllActions { get; set; } = false;
+    
+    private List<PlannedAction> DisplayedActions =>
+        ShowAllActions || !Card.HasMoreActions
+            ? Card.Actions
+            : Card.Actions.Take(3).ToList();
+    
+    private void ToggleShowAll()
+    {
+        ShowAllActions = !ShowAllActions;
+    }
+    
+    private async Task ConfirmAction()
+    {
+        await OnConfirmed.InvokeAsync(Card.Id);
+    }
+    
+    private async Task CancelAction()
+    {
+        await OnCancelled.InvokeAsync(Card.Id);
+    }
+    
+    private async Task EditAction()
+    {
+        await OnEdit.InvokeAsync(Card.Id);
+    }
+}

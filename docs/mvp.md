@@ -7,6 +7,9 @@
 3. ✅ **API with Agent Framework** - Connecting LLM + MCP tools
 4. ✅ **Tested Successfully** - Agent responding with tool-aware answers
 
+**Note**
+Always run: docker mcp gateway run --transport streaming --port 8033
+
 ## Architecture (As Built)
 
 ```
