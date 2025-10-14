@@ -12,6 +12,13 @@ builder.Services.AddRazorComponents()
 // Add SignalR
 builder.Services.AddSignalR();
 
+// Register dedicated HttpClient for ChatHub with API base address and extended timeout for streaming
+builder.Services.AddHttpClient<ChatHub>(client =>
+{
+    client.BaseAddress = new Uri("http://localhost:5095");
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
+
 // Register ChatService
 builder.Services.AddHttpClient<IChatService, ChatService>(client =>
 {

@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.SignalR;
 using ObsidianAI.Web.Services;
 using ObsidianAI.Web.Models;
+using System.Net.Http;
+using System.Text;
+using System.Net.Http.Json;
 
 namespace ObsidianAI.Web.Hubs;
 
@@ -8,11 +11,13 @@ public class ChatHub : Hub
 {
     private readonly IChatService _chatService;
     private readonly ILogger<ChatHub> _logger;
+    private readonly HttpClient _httpClient;
 
-    public ChatHub(IChatService chatService, ILogger<ChatHub> logger)
+    public ChatHub(IChatService chatService, ILogger<ChatHub> logger, HttpClient httpClient)
     {
         _chatService = chatService;
         _logger = logger;
+        _httpClient = httpClient;
     }
 
     public async Task StreamMessage(string message)
@@ -21,56 +26,41 @@ public class ChatHub : Hub
 
         try
         {
-            var simulatedResponse = "I'm processing your message: \"" + message + "\". " +
-                "This is a simulated streaming response. In the actual implementation, " +
-                "this would connect to the Agent Framework and stream tokens as they arrive " +
-                "from the LM Studio API.";
-
-            if (message.Contains("move", StringComparison.OrdinalIgnoreCase) ||
-                message.Contains("reorganize", StringComparison.OrdinalIgnoreCase))
+            // Call the Agent Framework API streaming endpoint
+            var request = new HttpRequestMessage(HttpMethod.Post, "/chat/stream")
             {
-                simulatedResponse = "I'll move the files as requested. Please confirm this action.\n\n" +
-                    "📄 Move project-retrospective.md → Archive/2024/\n" +
-                    "📄 Move sprint-review.md → Archive/2024/\n" +
-                    "📄 Move team-meeting.md → Archive/2024/\n" +
-                    "📄 Move planning-session.md → Archive/2024/\n" +
-                    "📄 Move retrospective-2023.md → Archive/2024/\n" +
-                    "📄 Move quarterly-summary.md → Archive/2024/\n" +
-                    "📄 Move action-items.md → Archive/2024/\n\n" +
-                    "Click Confirm to execute these actions or Cancel to abort.";
-            }
-            else if (message.Contains("search", StringComparison.OrdinalIgnoreCase))
+                Content = JsonContent.Create(new { message })
+            };
+
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+
+            // Read the streaming response
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var reader = new StreamReader(stream);
+
+            var fullResponse = new StringBuilder();
+            var buffer = new char[1];
+
+            // Stream character by character
+            while (await reader.ReadAsync(buffer, 0, 1) > 0)
             {
-                simulatedResponse = "I found the following notes in your vault:\n\n" +
-                    "Meeting Notes 2024-01-15.md: \"...discussed project timeline and deliverables for Q1...\"\n" +
-                    "Project Roadmap.md: \"...key milestones include prototype completion by end of February...\"\n" +
-                    "Action Items.md: \"...follow up with design team about UI mockups...\"\n" +
-                    "Team Retrospective.md: \"...identified communication gaps between departments...\"\n\n" +
-                    "Would you like me to open any of these files?";
-            }
+                var character = buffer[0].ToString();
+                fullResponse.Append(character);
 
-            var words = simulatedResponse.Split(' ');
-            var fullResponse = string.Empty;
-
-            foreach (var word in words)
-            {
-                await Task.Delay(50);
-                var token = word + " ";
-                fullResponse += token;
-
-                // Send each token via SignalR event
-                await Clients.Caller.SendAsync("ReceiveToken", token);
+                // Send each character as a token
+                await Clients.Caller.SendAsync("ReceiveToken", character);
             }
 
             // Send completion event
-            await Clients.Caller.SendAsync("MessageComplete", fullResponse);
+            await Clients.Caller.SendAsync("MessageComplete", fullResponse.ToString());
 
             _logger.LogInformation("Message processing complete");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing message");
-            await Clients.Caller.SendAsync("Error", ex.Message);
+            await Clients.Caller.SendAsync("Error", $"Failed to process message: {ex.Message}");
         }
     }
 
