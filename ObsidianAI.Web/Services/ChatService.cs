@@ -217,6 +217,30 @@ public class ChatService : IChatService
         return Task.FromResult(new List<ChatMessage>());
     }
     
+    /// <summary>
+    /// Gets the current LLM provider name from the backend.
+    /// </summary>
+    public async Task<string> GetLlmProviderAsync()
+    {
+        try
+        {
+            _logger.LogInformation("Fetching LLM provider from API");
+            var response = await _httpClient.GetAsync("/api/llm/provider");
+            response.EnsureSuccessStatusCode();
+
+            var providerResponse = await response.Content.ReadFromJsonAsync<LlmProviderResponse>();
+            var provider = providerResponse?.Provider?.Trim() ?? string.Empty;
+
+            _logger.LogInformation("Active LLM provider: {Provider}", provider);
+            return provider;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch LLM provider. Defaulting to empty string.");
+            return string.Empty;
+        }
+    }
+    
     private static string GetIconForFileExtension(string extension)
     {
         return extension.ToLowerInvariant() switch
@@ -275,4 +299,9 @@ internal record CreateNoteApiResponse
     public bool Success { get; init; }
     public string Message { get; init; } = string.Empty;
     public string CreatedPath { get; init; } = string.Empty;
+}
+
+internal record LlmProviderResponse
+{
+    public string Provider { get; init; } = string.Empty;
 }

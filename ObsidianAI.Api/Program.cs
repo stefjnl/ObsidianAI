@@ -1,74 +1,65 @@
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 using ObsidianAI.Api.Models;
-using OpenAI;
-using System.ClientModel;
 using System.Text;
+using Microsoft.Extensions.Configuration;
+using ObsidianAI.Api.Services;
+using System;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add service defaults (health checks, telemetry)
 builder.AddServiceDefaults();
 
-// 1. Connect to LM Studio (OpenAI-compatible)
-var lmStudioClient = new OpenAIClient(
-    new ApiKeyCredential("lm-studio"),
-    new OpenAIClientOptions
-    {
-        Endpoint = new Uri("http://localhost:1234/v1")
-    }
-);
-
-var chatClient = lmStudioClient.GetChatClient("openai/gpt-oss-20b");
-
-// 2. Connect to MCP server via Docker Gateway with Streaming Transport
-// First, ensure Docker MCP Gateway is running with streaming:
-// docker mcp gateway run --transport streaming --port 8033
-
-var clientTransport = new HttpClientTransport(
-    new HttpClientTransportOptions
-    {
-        Endpoint = new Uri("http://localhost:8033/mcp")
-    }
-);
-
-await using var mcpClient = await McpClient.CreateAsync(clientTransport);
-
-// 3. Get Obsidian tools from MCP server
-var obsidianTools = await mcpClient.ListToolsAsync();
-
-Console.WriteLine($"Connected to MCP server. Found {obsidianTools.Count} tools.");
-
-// 4. Create Agent with both LLM and tools
-var agent = chatClient.CreateAIAgent(
-    name: "ObsidianAssistant",
-    instructions: "You help users query and organize their Obsidian vault. Use the available tools to search, read, and modify notes.",
-    tools: [.. obsidianTools.Cast<AITool>()]
-);
-
-var app = builder.Build();
-app.MapDefaultEndpoints();
-
-// 5. Create chat endpoint
-app.MapPost("/chat", async (ChatRequest request) =>
+// Register ILlmClientFactory singleton based on LLM:Provider configuration
+builder.Services.AddSingleton<ILlmClientFactory>(sp =>
 {
-    var response = await agent.RunAsync(request.Message);
-    return Results.Ok(new { text = response.Text });
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var provider = configuration["LLM:Provider"]?.Trim() ?? "LMStudio";
+    return provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase)
+        ? new OpenRouterClientFactory(configuration)
+        : new LmStudioClientFactory(configuration);
 });
 
-app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context) =>
+// Register MCP client as singleton using async factory pattern
+// We'll create a wrapper service that handles async initialization
+builder.Services.AddSingleton<McpClientService>();
+builder.Services.AddSingleton<McpClient>(sp => sp.GetRequiredService<McpClientService>().Client);
+builder.Services.AddHostedService<McpClientService>(); // Register as hosted service for proper startup initialization
+
+// Register assistant service as singleton
+builder.Services.AddSingleton<ObsidianAssistantService>();
+
+var app = builder.Build();
+// Startup log for configured LLM provider and model
+var llmFactory = app.Services.GetRequiredService<ILlmClientFactory>();
+var providerName = app.Configuration["LLM:Provider"]?.Trim() ?? "LMStudio";
+var modelName = llmFactory.GetModelName();
+app.Logger.LogInformation("Using LLM provider: {Provider}, Model: {Model}", providerName, modelName);
+app.MapDefaultEndpoints();
+
+// Expose current LLM provider to frontend
+app.MapGet("/api/llm/provider", (IConfiguration config) =>
+{
+    var provider = config["LLM:Provider"]?.Trim() ?? "LMStudio";
+    return Results.Ok(new { provider });
+});
+
+// 5. Create chat endpoint using ObsidianAssistantService
+app.MapPost("/chat", async (ChatRequest request, ObsidianAssistantService assistant) =>
+{
+    var text = await assistant.ChatAsync(request);
+    return Results.Ok(new { text });
+});
+
+app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, ObsidianAssistantService assistant) =>
 {
     context.Response.ContentType = "text/plain";
     context.Response.Headers.CacheControl = "no-cache";
     context.Response.Headers.Connection = "keep-alive";
 
-    var responseStream = agent.RunStreamingAsync(request.Message);
-    var enumerableResponseStream = (System.Collections.Generic.IAsyncEnumerable<dynamic>)responseStream;
-    await foreach (var update in enumerableResponseStream)
+    await foreach (var chunk in assistant.StreamChatAsync(request, context.RequestAborted))
     {
-        var text = update?.Text?.ToString() ?? "";
-        var data = Encoding.UTF8.GetBytes(text);
+        var data = Encoding.UTF8.GetBytes(chunk);
         await context.Response.Body.WriteAsync(data);
         await context.Response.Body.FlushAsync();
     }

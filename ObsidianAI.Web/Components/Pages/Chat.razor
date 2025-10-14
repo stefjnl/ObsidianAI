@@ -17,6 +17,16 @@
     </div>
 </div>
 
+@if (isOpenRouter)
+{
+    <div class="privacy-warning" role="alert" aria-live="polite">
+        <span class="privacy-warning-icon" aria-hidden="true">⚠️</span>
+        <div>
+            <strong>Privacy Notice:</strong> You are using the OpenRouter LLM provider. Your prompts and data will be sent to a third-party cloud service.
+        </div>
+    </div>
+}
+
 <div class="chat-area">
     @if (conversationHistory.Any())
     {
@@ -64,9 +74,12 @@
     private string currentMessage = string.Empty;
     private bool isProcessing = false;
     private ChatMessage? currentAiMessage;
+    private string llmProvider = string.Empty;
+    private bool isOpenRouter = false;
 
     protected override async Task OnInitializedAsync()
     {
+        await FetchLlmProvider();
         await InitializeSignalR();
         await LoadQuickActions();
     }
@@ -153,6 +166,14 @@
     private async Task LoadQuickActions()
     {
         quickActions = await ChatService.GetQuickActionsAsync();
+    }
+    
+    private async Task FetchLlmProvider()
+    {
+        var provider = await ChatService.GetLlmProviderAsync();
+        llmProvider = provider;
+        isOpenRouter = string.Equals(provider, "OpenRouter", StringComparison.OrdinalIgnoreCase);
+        StateHasChanged();
     }
 
     private async Task SendMessage()
@@ -283,7 +304,7 @@
             {
                 message = message with
                 {
-                    ActionCard = message.ActionCard with
+                    ActionCard = message.ActionCard! with
                     {
                         Status = ActionCardStatus.Failed,
                         StatusMessage = $"Failed to execute actions: {ex.Message}"
@@ -338,7 +359,7 @@
         await ScrollToBottom();
     }
 
-    private async Task ParseResponseForComponents(string response)
+    private Task ParseResponseForComponents(string response)
     {
         // Basic parsing logic to detect action cards or search results
         if (response.Contains("confirm", StringComparison.OrdinalIgnoreCase) &&
@@ -426,6 +447,7 @@
                 }
             }
         }
+        return Task.CompletedTask;
     }
 
     private string ExtractSourcePath(string line)

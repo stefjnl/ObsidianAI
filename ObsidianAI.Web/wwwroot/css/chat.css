@@ -339,3 +339,30 @@ body {
 .hidden {
     display: none;
 }
+
+/* Privacy warning banner for OpenRouter provider */
+.privacy-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: #fff3cd;           /* Accessible warning background */
+    border: 1px solid #ffe69c;      /* Subtle border for contrast */
+    color: #664d03;                 /* High-contrast foreground */
+    padding: 12px 16px;
+    margin: 12px 24px 0 24px;       /* Align with header padding */
+    border-radius: 8px;
+    line-height: 1.4;
+}
+
+.privacy-warning-icon {
+    font-size: 18px;
+    line-height: 1;
+    margin-top: 2px;                /* Visually aligns the icon vertically */
+}
+
+@media (max-width: 600px) {
+    .privacy-warning {
+        margin: 12px 12px 0 12px;
+        font-size: 14px;
+    }
+}
