@@ -92,8 +92,20 @@
     {
             if (currentAiMessage != null)
             {
-                currentAiMessage = currentAiMessage with { Content = currentAiMessage.Content + token };
-                StateHasChanged();
+            // Find the message in the list
+                var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                if (index >= 0)
+                {
+                // Create updated message (remove processing indicator on first token)
+                    currentAiMessage = currentAiMessage with
+                    {
+                        Content = currentAiMessage.Content + token,
+                        IsProcessing = false // <-- Add this line
+                    };
+                // Replace in list
+                    conversationHistory[index] = currentAiMessage;
+                    StateHasChanged();
+                }
             }
         });
         });
