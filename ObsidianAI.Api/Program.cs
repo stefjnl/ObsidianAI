@@ -1,8 +1,10 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
+using ObsidianAI.Api.Models;
 using OpenAI;
 using System.ClientModel;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,7 +20,7 @@ var lmStudioClient = new OpenAIClient(
     }
 );
 
-var chatClient = lmStudioClient.GetChatClient("your-model-name");
+var chatClient = lmStudioClient.GetChatClient("openai/gpt-oss-20b");
 
 // 2. Connect to MCP server via Docker Gateway with Streaming Transport
 // First, ensure Docker MCP Gateway is running with streaming:
@@ -55,6 +57,39 @@ app.MapPost("/chat", async (ChatRequest request) =>
     return Results.Ok(new { text = response.Text });
 });
 
-app.Run();
+app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context) =>
+{
+    context.Response.ContentType = "text/plain";
+    context.Response.Headers.CacheControl = "no-cache";
+    context.Response.Headers.Connection = "keep-alive";
 
-record ChatRequest(string Message);
+    var responseStream = agent.RunStreamingAsync(request.Message);
+    var enumerableResponseStream = (System.Collections.Generic.IAsyncEnumerable<dynamic>)responseStream;
+    await foreach (var update in enumerableResponseStream)
+    {
+        var text = update?.Text?.ToString() ?? "";
+        var data = Encoding.UTF8.GetBytes(text);
+        await context.Response.Body.WriteAsync(data);
+        await context.Response.Body.FlushAsync();
+    }
+
+    return Results.Ok();
+});
+
+app.MapPost("/vault/search", (SearchRequest request) =>
+{
+    // Placeholder logic
+    var results = new List<SearchResult>
+    {
+        new SearchResult("docs/sample.md", 0.9f, "This is a sample search result.")
+    };
+    return Results.Ok(new SearchResponse(results));
+});
+
+app.MapPost("/vault/reorganize", (ReorganizeRequest request) =>
+{
+    // Placeholder logic
+    return Results.Ok(new ReorganizeResponse("Completed", 10));
+});
+
+app.Run();
