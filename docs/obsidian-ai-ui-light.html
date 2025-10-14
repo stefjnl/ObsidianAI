@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obsidian AI Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #2c2c2c;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            background: #ffffff;
+            padding: 16px 24px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #2c2c2c;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: 1px solid #d0d0d0;
+            color: #2c2c2c;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-icon:hover {
+            background: #f0f0f0;
+            border-color: #c0c0c0;
+        }
+
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .message {
+            display: flex;
+            gap: 12px;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            flex-direction: row-reverse;
+        }
+
+        .message-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .message.user .message-avatar {
+            background: #c8d8e4;
+        }
+
+        .message-content {
+            max-width: 70%;
+            background: #ffffff;
+            padding: 12px 16px;
+            border-radius: 12px;
+            line-height: 1.5;
+            color: #2c2c2c;
+            border: 1px solid #e0e0e0;
+        }
+
+        .message.user .message-content {
+            background: #f0f0f0;
+            border: 1px solid #d0d0d0;
+        }
+
+        .action-card {
+            background: #fafafa;
+            border: 1px solid #d0d0d0;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+
+        .action-card-header {
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #2c2c2c;
+        }
+
+        .action-list {
+            list-style: none;
+            margin: 12px 0;
+        }
+
+        .action-list li {
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #2c2c2c;
+        }
+
+        .action-list li:last-child {
+            border-bottom: none;
+        }
+
+        .view-all {
+            color: #4a7c9d;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 8px;
+            display: inline-block;
+        }
+
+        .view-all:hover {
+            text-decoration: underline;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-confirm {
+            background: #4a9d5f;
+            color: white;
+        }
+
+        .btn-confirm:hover {
+            background: #5bb573;
+        }
+
+        .btn-cancel {
+            background: #d64545;
+            color: white;
+        }
+
+        .btn-cancel:hover {
+            background: #e55555;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid #d0d0d0;
+            color: #2c2c2c;
+        }
+
+        .btn-secondary:hover {
+            background: #f0f0f0;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #666666;
+            margin-top: 8px;
+        }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid #d0d0d0;
+            border-top-color: #4a7c9d;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .input-area {
+            background: #ffffff;
+            border-top: 1px solid #e0e0e0;
+            padding: 20px 24px;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .input-field {
+            flex: 1;
+            background: #fafafa;
+            border: 1px solid #d0d0d0;
+            color: #2c2c2c;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-field:focus {
+            border-color: #4a7c9d;
+            background: #ffffff;
+        }
+
+        .btn-send {
+            background: #4a7c9d;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-send:hover {
+            background: #5a8cad;
+        }
+
+        .btn-send:disabled {
+            background: #c0c0c0;
+            cursor: not-allowed;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .quick-action-label {
+            font-size: 12px;
+            color: #666666;
+            margin-right: 8px;
+        }
+
+        .quick-action-btn {
+            background: #fafafa;
+            border: 1px solid #d0d0d0;
+            color: #2c2c2c;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-action-btn:hover {
+            background: #f0f0f0;
+            border-color: #4a7c9d;
+        }
+
+        .search-result {
+            background: #fafafa;
+            border: 1px solid #d0d0d0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 8px;
+        }
+
+        .search-result-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #2c2c2c;
+        }
+
+        .search-result-preview {
+            font-size: 13px;
+            color: #666666;
+            margin-bottom: 8px;
+            font-style: italic;
+        }
+
+        .search-result-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Obsidian AI</h1>
+            <div class="header-actions">
+                <button class="btn-icon" onclick="alert('Vault browser coming soon!')">📁 Vault</button>
+                <button class="btn-icon" onclick="alert('Settings coming soon!')">⚙️</button>
+                <button class="btn-icon" onclick="showHistory()">History</button>
+            </div>
+        </div>
+
+        <div class="chat-area" id="chatArea">
+            <div class="message user">
+                <div class="message-avatar">👤</div>
+                <div class="message-content">
+                    Move all project retrospectives to Archive/2024
+                </div>
+            </div>
+
+            <div class="message">
+                <div class="message-avatar">🤖</div>
+                <div class="message-content">
+                    I'll move 7 retrospective files to Archive/2024. Please confirm this action.
+                    
+                    <div class="action-card" id="actionCard1">
+                        <div class="action-card-header">
+                            📋 PLANNED ACTIONS
+                        </div>
+                        <ul class="action-list">
+                            <li>📄 Move Sprint-01-Retro.md → Archive/2024/</li>
+                            <li>📄 Move Sprint-02-Retro.md → Archive/2024/</li>
+                            <li>📄 Move Sprint-03-Retro.md → Archive/2024/</li>
+                        </ul>
+                        <span class="view-all" onclick="viewAllActions()">... and 4 more · View all</span>
+                        
+                        <div class="action-buttons">
+                            <button class="btn btn-confirm" onclick="confirmAction()">✓ Confirm</button>
+                            <button class="btn btn-cancel" onclick="cancelAction()">✗ Cancel</button>
+                            <button class="btn btn-secondary" onclick="editSelection()">Edit Selection</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <div class="input-wrapper">
+                <input type="text" class="input-field" id="messageInput" placeholder="Type a message..." onkeypress="handleKeyPress(event)">
+                <button class="btn-send" onclick="sendMessage()">→</button>
+            </div>
+            <div class="quick-actions">
+                <span class="quick-action-label">Quick actions:</span>
+                <button class="quick-action-btn" onclick="quickAction('search')">Search vault</button>
+                <button class="quick-action-btn" onclick="quickAction('create')">Create note</button>
+                <button class="quick-action-btn" onclick="quickAction('reorganize')">Reorganize</button>
+                <button class="quick-action-btn" onclick="quickAction('summarize')">Summarize</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            const chatArea = document.getElementById('chatArea');
+            
+            // Add user message
+            const userMsg = document.createElement('div');
+            userMsg.className = 'message user';
+            userMsg.innerHTML = `
+                <div class="message-avatar">👤</div>
+                <div class="message-content">${message}</div>
+            `;
+            chatArea.appendChild(userMsg);
+            
+            // Clear input
+            input.value = '';
+            
+            // Scroll to bottom
+            chatArea.scrollTop = chatArea.scrollHeight;
+            
+            // Simulate AI response
+            setTimeout(() => simulateResponse(message), 800);
+        }
+
+        function simulateResponse(userMessage) {
+            const chatArea = document.getElementById('chatArea');
+            const aiMsg = document.createElement('div');
+            aiMsg.className = 'message';
+            
+            const lowerMsg = userMessage.toLowerCase();
+            
+            if (lowerMsg.includes('search') || lowerMsg.includes('find')) {
+                aiMsg.innerHTML = `
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="status-indicator">
+                            <div class="spinner"></div>
+                            Searching vault...
+                        </div>
+                    </div>
+                `;
+                chatArea.appendChild(aiMsg);
+                chatArea.scrollTop = chatArea.scrollHeight;
+                
+                setTimeout(() => {
+                    aiMsg.querySelector('.message-content').innerHTML = `
+                        Found 3 notes matching your query:
+                        <div class="search-result">
+                            <div class="search-result-title">📝 Meeting Notes 2024-01-15</div>
+                            <div class="search-result-preview">"...discussed project timeline and deliverables..."</div>
+                            <div class="search-result-actions">
+                                <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="alert('Opening in Obsidian...')">Open</button>
+                                <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="alert('Added to collection!')">Add to collection</button>
+                            </div>
+                        </div>
+                        <div class="search-result">
+                            <div class="search-result-title">📝 Project X - Implementation</div>
+                            <div class="search-result-preview">"...using TDD and pair programming approach..."</div>
+                            <div class="search-result-actions">
+                                <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="alert('Opening in Obsidian...')">Open</button>
+                                <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="alert('Added to collection!')">Add to collection</button>
+                            </div>
+                        </div>
+                        <span class="view-all" onclick="alert('Showing all results...')">View all 3 results</span>
+                    `;
+                    chatArea.scrollTop = chatArea.scrollHeight;
+                }, 1500);
+            } else {
+                aiMsg.innerHTML = `
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        I can help you with that! I have access to your Obsidian vault and can:
+                        <ul style="margin: 12px 0 0 20px; line-height: 1.8;">
+                            <li>Search for notes and content</li>
+                            <li>Reorganize files and folders</li>
+                            <li>Create new notes with templates</li>
+                            <li>Summarize existing content</li>
+                        </ul>
+                        Try asking me to search for something specific!
+                    </div>
+                `;
+                chatArea.appendChild(aiMsg);
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function confirmAction() {
+            const card = document.getElementById('actionCard1');
+            card.innerHTML = `
+                <div class="action-card-header">
+                    ✓ Action Complete
+                </div>
+                <div style="color: #4a9d5f; margin-top: 8px;">
+                    Successfully moved 7 files to Archive/2024/
+                </div>
+            `;
+        }
+
+        function cancelAction() {
+            const card = document.getElementById('actionCard1');
+            card.innerHTML = `
+                <div class="action-card-header">
+                    ✗ Action Cancelled
+                </div>
+                <div style="color: #d64545; margin-top: 8px;">
+                    No files were moved.
+                </div>
+            `;
+        }
+
+        function editSelection() {
+            alert('Edit mode: Select which files to move (feature coming soon!)');
+        }
+
+        function viewAllActions() {
+            alert('Showing all 7 files:\n• Sprint-01-Retro.md\n• Sprint-02-Retro.md\n• Sprint-03-Retro.md\n• Sprint-04-Retro.md\n• Sprint-05-Retro.md\n• Q1-2024-Retro.md\n• H1-2024-Retro.md');
+        }
+
+        function quickAction(action) {
+            const input = document.getElementById('messageInput');
+            const actions = {
+                'search': 'Search my vault for ',
+                'create': 'Create a new note called ',
+                'reorganize': 'Reorganize my vault by ',
+                'summarize': 'Summarize '
+            };
+            input.value = actions[action];
+            input.focus();
+        }
+
+        function showHistory() {
+            alert('Recent conversations:\n• Project retrospective reorganization\n• Search for meeting notes\n• Create weekly review template\n(Full history feature coming soon!)');
+        }
+    </script>
+</body>
+</html>

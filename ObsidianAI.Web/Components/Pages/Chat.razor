@@ -1,0 +1,453 @@
+@page "/"
+@using ObsidianAI.Web.Models
+@using ObsidianAI.Web.Services
+@using ObsidianAI.Web.Components.Shared
+@using Microsoft.AspNetCore.SignalR.Client
+@inject IChatService ChatService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime jsRuntime
+
+<div class="header">
+    <h1>🧠 Obsidian AI</h1>
+    <div class="header-actions">
+        <button class="btn-icon" type="button" aria-label="Open Vault">📁 Vault</button>
+        <button class="btn-icon" type="button" aria-label="Open Settings">⚙️</button>
+        <button class="btn-icon" type="button" aria-label="Show History">History</button>
+    </div>
+</div>
+
+<div class="chat-area">
+    @if (conversationHistory.Any())
+    {
+        @foreach (var message in conversationHistory)
+        {
+            <MessageBubble Message="@message" 
+                          OnActionConfirmed="HandleActionConfirmed" 
+                          OnActionCancelled="HandleActionCancelled" 
+                          OnActionEdit="HandleActionEdit" />
+        }
+    }
+    else
+    {
+        <div class="welcome-message">
+            <p>Welcome to Obsidian AI! How can I help you today?</p>
+        </div>
+    }
+</div>
+
+<div class="input-area">
+    <div class="input-wrapper">
+        <input type="text" class="input-field" 
+               placeholder="Type a message..." 
+               aria-label="Message input" 
+               @bind="currentMessage" 
+               @onkeypress="HandleKeyPress"
+               disabled="@isProcessing" />
+        <button class="btn-send" type="button" 
+                aria-label="Send message" 
+                @onclick="SendMessage"
+                disabled="@isProcessing || string.IsNullOrWhiteSpace(currentMessage)">
+            →
+        </button>
+    </div>
+    <div class="quick-actions" aria-label="Quick actions">
+        <span class="quick-action-label">Quick actions:</span>
+        @if (quickActions.Any())
+        {
+            @foreach (var action in quickActions)
+            {
+                <button class="quick-action-btn" type="button" @onclick="() => HandleQuickAction(action)">
+                    @action.Label
+                </button>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private HubConnection? hubConnection;
+    private List<ChatMessage> conversationHistory = new();
+    private List<QuickAction> quickActions = new();
+    private string currentMessage = string.Empty;
+    private bool isProcessing = false;
+    private ChatMessage? currentAiMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await InitializeSignalR();
+        await LoadQuickActions();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ScrollToBottom();
+        }
+    }
+
+    private async Task InitializeSignalR()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/chathub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<string>("ReceiveToken", (token) =>
+        {
+            InvokeAsync(() =>
+            {
+                if (currentAiMessage != null)
+                {
+                    currentAiMessage = currentAiMessage with { Content = currentAiMessage.Content + token };
+                    StateHasChanged();
+                }
+            });
+        });
+
+        hubConnection.On<string>("MessageComplete", (finalMessage) =>
+        {
+            InvokeAsync(async () =>
+            {
+                if (currentAiMessage != null)
+                {
+                    // Parse the message for action cards or search results
+                    await ParseResponseForComponents(finalMessage);
+                    
+                    currentAiMessage = currentAiMessage with { IsProcessing = false };
+                    currentAiMessage = null;
+                    isProcessing = false;
+                    StateHasChanged();
+                    await ScrollToBottom();
+                }
+            });
+        });
+
+        hubConnection.On<string>("Error", (error) =>
+        {
+            InvokeAsync(() =>
+            {
+                if (currentAiMessage != null)
+                {
+                    currentAiMessage = new ChatMessage
+                    {
+                        Content = $"Error: {error}",
+                        Sender = MessageSender.AI,
+                        Timestamp = DateTime.UtcNow
+                    };
+                    currentAiMessage = null;
+                    isProcessing = false;
+                    StateHasChanged();
+                }
+            });
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    private async Task LoadQuickActions()
+    {
+        quickActions = await ChatService.GetQuickActionsAsync();
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(currentMessage) || isProcessing)
+            return;
+
+        var userMessage = new ChatMessage
+        {
+            Content = currentMessage,
+            Sender = MessageSender.User,
+            Timestamp = DateTime.UtcNow
+        };
+
+        conversationHistory.Add(userMessage);
+        var messageToSend = currentMessage;
+        currentMessage = string.Empty;
+        isProcessing = true;
+
+        // Create a placeholder AI message for streaming
+        currentAiMessage = new ChatMessage
+        {
+            Content = string.Empty,
+            Sender = MessageSender.AI,
+            Timestamp = DateTime.UtcNow,
+            IsProcessing = true,
+            ProcessingType = ProcessingType.Thinking
+        };
+
+        conversationHistory.Add(currentAiMessage);
+        StateHasChanged();
+        await ScrollToBottom();
+
+        try
+        {
+            if (hubConnection != null)
+            {
+                await hubConnection.SendAsync("StreamMessage", messageToSend);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Handle connection errors
+            if (currentAiMessage != null)
+            {
+                var errorMessage = new ChatMessage
+                {
+                    Content = $"Connection error: {ex.Message}",
+                    Sender = MessageSender.AI,
+                    Timestamp = DateTime.UtcNow
+                };
+                
+                conversationHistory.Remove(currentAiMessage);
+                conversationHistory.Add(errorMessage);
+                currentAiMessage = null;
+                isProcessing = false;
+            }
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
+    private Task HandleQuickAction(QuickAction action)
+    {
+        currentMessage = action.Prefix;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleActionConfirmed(string actionId)
+    {
+        // Find the message with this action card
+        var message = conversationHistory.FirstOrDefault(m => m.ActionCard?.Id == actionId);
+        if (message != null && message.ActionCard != null)
+        {
+            // Update the action card status
+            message = message with
+            {
+                ActionCard = message.ActionCard with
+                {
+                    Status = ActionCardStatus.Processing
+                }
+            };
+            
+            // Update in the list
+            var index = conversationHistory.IndexOf(conversationHistory.First(m => m.ActionCard?.Id == actionId));
+            conversationHistory[index] = message;
+            
+            StateHasChanged();
+
+            // Execute the action via the chat service
+            try
+            {
+                var request = new ReorganizeRequest
+                {
+                    Operation = message.ActionCard.OperationType.ToString(),
+                    FileOperations = message.ActionCard.Actions.Select(a => new FileOperation
+                    {
+                        SourcePath = a.Source,
+                        DestinationPath = a.Destination,
+                        Operation = a.Type.ToString()
+                    }).ToList(),
+                    ConfirmationId = actionId
+                };
+
+                var response = await ChatService.ReorganizeAsync(request);
+                
+                // Update the action card with the result
+                message = message with
+                {
+                    ActionCard = message.ActionCard with
+                    {
+                        Status = response.Success ? ActionCardStatus.Completed : ActionCardStatus.Failed,
+                        StatusMessage = response.Message
+                    }
+                };
+                
+                conversationHistory[index] = message;
+            }
+            catch (Exception ex)
+            {
+                message = message with
+                {
+                    ActionCard = message.ActionCard with
+                    {
+                        Status = ActionCardStatus.Failed,
+                        StatusMessage = $"Failed to execute actions: {ex.Message}"
+                    }
+                };
+                
+                conversationHistory[index] = message;
+            }
+            
+            StateHasChanged();
+        }
+    }
+
+    private Task HandleActionCancelled(string actionId)
+    {
+        // Find the message with this action card
+        var message = conversationHistory.FirstOrDefault(m => m.ActionCard?.Id == actionId);
+        if (message != null && message.ActionCard != null)
+        {
+            // Update the action card status
+            message = message with
+            {
+                ActionCard = message.ActionCard with
+                {
+                    Status = ActionCardStatus.Cancelled,
+                    StatusMessage = "Action cancelled by user"
+                }
+            };
+            
+            // Update in the list
+            var index = conversationHistory.IndexOf(conversationHistory.First(m => m.ActionCard?.Id == actionId));
+            conversationHistory[index] = message;
+            
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleActionEdit(string actionId)
+    {
+        // For now, just show a message
+        // In a real implementation, this would open an edit dialog
+        var editMessage = new ChatMessage
+        {
+            Content = "Edit functionality not yet implemented. Please cancel and retry with a different request.",
+            Sender = MessageSender.AI,
+            Timestamp = DateTime.UtcNow
+        };
+        
+        conversationHistory.Add(editMessage);
+        StateHasChanged();
+        await ScrollToBottom();
+    }
+
+    private async Task ParseResponseForComponents(string response)
+    {
+        // Basic parsing logic to detect action cards or search results
+        if (response.Contains("confirm", StringComparison.OrdinalIgnoreCase) && 
+            response.Contains("move", StringComparison.OrdinalIgnoreCase))
+        {
+            // Extract planned actions (simplified parsing)
+            var actions = new List<PlannedAction>();
+            var lines = response.Split('\n');
+            
+            foreach (var line in lines)
+            {
+                if (line.Contains("→") || line.Contains("move", StringComparison.OrdinalIgnoreCase))
+                {
+                    actions.Add(new PlannedAction
+                    {
+                        Icon = "📄",
+                        Description = line.Trim(),
+                        Type = ActionType.Move,
+                        Source = ExtractSourcePath(line),
+                        Destination = ExtractDestinationPath(line)
+                    });
+                }
+            }
+            
+            if (actions.Any())
+            {
+                var actionCard = new ActionCardData
+                {
+                    Title = "Planned Actions",
+                    Actions = actions,
+                    HasMoreActions = actions.Count > 3,
+                    HiddenActionCount = Math.Max(0, actions.Count - 3),
+                    Status = ActionCardStatus.Pending,
+                    OperationType = ActionOperationType.Move
+                };
+                
+                // Update the current AI message with the action card
+                if (currentAiMessage != null)
+                {
+                    var index = conversationHistory.IndexOf(currentAiMessage);
+                    currentAiMessage = currentAiMessage with { ActionCard = actionCard };
+                    conversationHistory[index] = currentAiMessage;
+                }
+            }
+        }
+        else if (response.Contains("found", StringComparison.OrdinalIgnoreCase) || 
+                 response.Contains("search", StringComparison.OrdinalIgnoreCase))
+        {
+            // Extract search results (simplified parsing)
+            var searchResults = new List<SearchResultData>();
+            var lines = response.Split('\n');
+            
+            foreach (var line in lines)
+            {
+                if (line.Contains(".md") || line.Contains(".txt"))
+                {
+                    // Very basic parsing - in a real implementation, this would be more sophisticated
+                    var parts = line.Split(':');
+                    if (parts.Length >= 2)
+                    {
+                        searchResults.Add(new SearchResultData
+                        {
+                            Title = parts[0].Trim(),
+                            FilePath = parts[0].Trim(),
+                            Preview = parts.Length > 2 ? parts[2].Trim() : line.Trim(),
+                            Icon = "📝",
+                            FileExtension = ".md"
+                        });
+                    }
+                }
+            }
+            
+            if (searchResults.Any())
+            {
+                // Update the current AI message with search results
+                if (currentAiMessage != null)
+                {
+                    var index = conversationHistory.IndexOf(currentAiMessage);
+                    currentAiMessage = currentAiMessage with 
+                    { 
+                        SearchResults = searchResults,
+                        ProcessingType = ProcessingType.None
+                    };
+                    conversationHistory[index] = currentAiMessage;
+                }
+            }
+        }
+    }
+
+    private string ExtractSourcePath(string line)
+    {
+        // Simple extraction logic - would be more sophisticated in a real implementation
+        var match = System.Text.RegularExpressions.Regex.Match(line, @"(\S+\.\w+)");
+        return match.Success ? match.Value : string.Empty;
+    }
+
+    private string ExtractDestinationPath(string line)
+    {
+        // Simple extraction logic - would be more sophisticated in a real implementation
+        var match = System.Text.RegularExpressions.Regex.Match(line, @"→\s*(\S+)");
+        return match.Success ? match.Groups[1].Value : string.Empty;
+    }
+
+    private async Task ScrollToBottom()
+    {
+        await Task.Delay(100); // Small delay to ensure DOM is updated
+        await jsRuntime.InvokeVoidAsync("scrollToBottom");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection != null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

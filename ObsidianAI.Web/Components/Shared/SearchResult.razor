@@ -1,0 +1,38 @@
+@using ObsidianAI.Web.Models
+
+<div class="search-result-container">
+    <div class="search-result-title">
+        <span>@Result.Icon</span>
+        <span>@Result.Title</span>
+    </div>
+    
+    <div class="search-result-preview">
+        "@Result.Preview"
+    </div>
+    
+    <div class="search-result-actions">
+        <button class="btn btn-secondary" type="button" @onclick="OpenFile">Open</button>
+        <button class="btn btn-secondary" type="button" @onclick="AddToCollection">Add to collection</button>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public SearchResultData Result { get; set; } = default!;
+    
+    [Parameter]
+    public EventCallback<string> OnFileOpened { get; set; }
+    
+    [Parameter]
+    public EventCallback<string> OnAddedToCollection { get; set; }
+    
+    private async Task OpenFile()
+    {
+        await OnFileOpened.InvokeAsync(Result.FilePath);
+    }
+    
+    private async Task AddToCollection()
+    {
+        await OnAddedToCollection.InvokeAsync(Result.Id);
+    }
+}
