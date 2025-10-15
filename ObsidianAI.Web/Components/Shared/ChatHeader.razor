@@ -1,0 +1,21 @@
+@using ObsidianAI.Web.Models
+
+<div class="header">
+    <h1>🧠 Obsidian AI</h1>
+    <div class="header-actions">
+        <button class="btn-icon" type="button" aria-label="Open Vault" @onclick="OnVaultClick">📁 Vault</button>
+        <button class="btn-icon" type="button" aria-label="Open Settings" @onclick="OnSettingsClick">⚙️</button>
+        <button class="btn-icon" type="button" aria-label="Show History" @onclick="OnHistoryClick">History</button>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback OnVaultClick { get; set; }
+
+    [Parameter]
+    public EventCallback OnSettingsClick { get; set; }
+
+    [Parameter]
+    public EventCallback OnHistoryClick { get; set; }
+}

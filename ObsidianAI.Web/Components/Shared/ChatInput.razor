@@ -1,0 +1,81 @@
+@using ObsidianAI.Web.Models
+
+<div class="input-area">
+    <div class="input-wrapper">
+        <input type="text" class="input-field" placeholder="Type a message..." aria-label="Message input"
+            value="@currentMessage" @oninput="OnInputChange" @onkeypress="HandleKeyPress" disabled="@IsProcessing" />
+        <button class="btn-send" type="button" aria-label="Send message" @onclick="HandleSendMessage"
+            disabled="@(IsProcessing || string.IsNullOrWhiteSpace(currentMessage))">
+            →
+        </button>
+    </div>
+    <div class="quick-actions" aria-label="Quick actions">
+        <span class="quick-action-label">Quick actions:</span>
+        @if (QuickActions.Any())
+        {
+            @foreach (var action in QuickActions)
+            {
+                <button class="quick-action-btn" type="button" @onclick="() => HandleQuickAction(action)">
+                    @action.Label
+                </button>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private string currentMessage = string.Empty;
+
+    [Parameter]
+    public string MessageText { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback<string> MessageTextChanged { get; set; }
+
+    [Parameter]
+    public bool IsProcessing { get; set; }
+
+    [Parameter]
+    public List<QuickAction> QuickActions { get; set; } = new();
+
+    [Parameter]
+    public EventCallback OnSendMessage { get; set; }
+
+    [Parameter]
+    public EventCallback<QuickAction> OnQuickAction { get; set; }
+
+    protected override Task OnParametersSetAsync()
+    {
+        if (currentMessage != MessageText)
+        {
+            currentMessage = MessageText;
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task OnInputChange(ChangeEventArgs e)
+    {
+        currentMessage = e.Value?.ToString() ?? string.Empty;
+        await MessageTextChanged.InvokeAsync(currentMessage);
+    }
+
+    private async Task HandleSendMessage()
+    {
+        await OnSendMessage.InvokeAsync();
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await HandleSendMessage();
+        }
+    }
+
+    private async Task HandleQuickAction(QuickAction action)
+    {
+        currentMessage = action.Prefix;
+        await MessageTextChanged.InvokeAsync(currentMessage);
+        await OnQuickAction.InvokeAsync(action);
+    }
+}

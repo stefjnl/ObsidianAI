@@ -9,65 +9,21 @@
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
 
-<div class="header">
-    <h1>🧠 Obsidian AI</h1>
-    <div class="header-actions">
-        <button class="btn-icon" type="button" aria-label="Open Vault" @onclick="OpenVault">📁 Vault</button>
-        <button class="btn-icon" type="button" aria-label="Open Settings" @onclick="OpenSettings">⚙️</button>
-        <button class="btn-icon" type="button" aria-label="Show History" @onclick="ShowHistory">History</button>
-    </div>
-</div>
+<ChatHeader OnVaultClick="OpenVault" OnSettingsClick="OpenSettings" OnHistoryClick="ShowHistory" />
 
-@if (isOpenRouter)
-{
-    <div class="privacy-warning" role="alert" aria-live="polite">
-        <span class="privacy-warning-icon" aria-hidden="true">⚠️</span>
-        <div>
-            <strong>Privacy Notice:</strong> You are using the OpenRouter LLM provider. Your prompts and data will be sent
-            to a third-party cloud service.
-        </div>
-    </div>
-}
+<PrivacyWarning IsVisible="@isOpenRouter" />
 
-<div class="chat-area">
-    @if (conversationHistory.Any())
-    {
-        @foreach (var message in conversationHistory)
-        {
-            <MessageBubble Message="@message" OnActionConfirmed="HandleActionConfirmed"
-                OnActionCancelled="HandleActionCancelled" OnActionEdit="HandleActionEdit" />
-        }
-    }
-    else
-    {
-        <div class="welcome-message">
-            <p>Welcome to Obsidian AI! How can I help you today?</p>
-        </div>
-    }
-</div>
+<ChatArea Messages="@conversationHistory"
+          OnActionConfirmed="HandleActionConfirmed"
+          OnActionCancelled="HandleActionCancelled"
+          OnActionEdit="HandleActionEdit" />
 
-<div class="input-area">
-    <div class="input-wrapper">
-        <input type="text" class="input-field" placeholder="Type a message..." aria-label="Message input"
-            @bind="currentMessage" @onkeypress="HandleKeyPress" disabled="@isProcessing" />
-        <button class="btn-send" type="button" aria-label="Send message" @onclick="SendMessage"
-            disabled="@isProcessing || string.IsNullOrWhiteSpace(currentMessage)">
-            →
-        </button>
-    </div>
-    <div class="quick-actions" aria-label="Quick actions">
-        <span class="quick-action-label">Quick actions:</span>
-        @if (quickActions.Any())
-        {
-            @foreach (var action in quickActions)
-            {
-                <button class="quick-action-btn" type="button" @onclick="() => HandleQuickAction(action)">
-                    @action.Label
-                </button>
-            }
-        }
-    </div>
-</div>
+<ChatInput MessageText="@currentMessage"
+           MessageTextChanged="OnMessageTextChanged"
+           IsProcessing="@isProcessing"
+           QuickActions="@quickActions"
+           OnSendMessage="SendMessage"
+           OnQuickAction="HandleQuickActionCallback" />
 
 @code {
     private HubConnection? hubConnection;
@@ -274,15 +230,13 @@
         }
     }
 
-    private async Task HandleKeyPress(KeyboardEventArgs e)
+    private Task OnMessageTextChanged(string newValue)
     {
-        if (e.Key == "Enter" && !e.ShiftKey)
-        {
-            await SendMessage();
-        }
+        currentMessage = newValue;
+        return Task.CompletedTask;
     }
 
-    private Task HandleQuickAction(QuickAction action)
+    private Task HandleQuickActionCallback(QuickAction action)
     {
         currentMessage = action.Prefix;
         StateHasChanged();

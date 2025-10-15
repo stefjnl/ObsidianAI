@@ -1,0 +1,15 @@
+@if (IsVisible)
+{
+    <div class="privacy-warning" role="alert" aria-live="polite">
+        <span class="privacy-warning-icon" aria-hidden="true">⚠️</span>
+        <div>
+            <strong>Privacy Notice:</strong> You are using the OpenRouter LLM provider. Your prompts and data will be sent
+            to a third-party cloud service.
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public bool IsVisible { get; set; }
+}
