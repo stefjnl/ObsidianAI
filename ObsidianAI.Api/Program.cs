@@ -32,56 +32,53 @@ builder.Services.AddSingleton<ObsidianAssistantService>(sp =>
 {
     var llmFactory = sp.GetRequiredService<ILlmClientFactory>();
     var mcpClient = sp.GetRequiredService<McpClient>();
-    var instructions = @"You are an Obsidian vault assistant with access to file management tools.
+    var instructions = @"You help users manage their Obsidian vault.
 
-# TOOL SELECTION RULES
-For queries involving ""list"", ""what"", ""show"", ""find"", or ""search"", you MUST use tools like obsidian_list_files_in_vault or obsidian_simple_search.
-Only use tools that create or modify files (e.g., obsidian_append_content, obsidian_patch_content, file creation) when the user explicitly asks to ""create"", ""append"", ""modify"", ""edit"", or ""write"".
-You must not use a file writing tool if a user is asking a question or asking to list something.
+FILE RESOLUTION STRATEGY:
+When a user mentions a filename without an exact path, you MUST follow these steps:
+1. Call obsidian_list_files_in_vault() to get a complete list of all file paths in the vault.
+2. Normalize both the user's input and each filename from the vault for comparison. Normalization includes:
+   - Removing any emoji characters (e.g., 💡, 📝, 📁, 🤖, ✨, 📓, 🔍).
+   - Converting the text to lowercase.
+   - Trimming leading/trailing whitespace.
+   - Ensuring the filename ends with the '.md' extension (add it if missing from the user's input).
+3. Compare the normalized user input against each normalized vault filename.
+4. If you find a single, unambiguous match, use the original, exact vault path (including any emojis) for all subsequent operations (e.g., obsidian_append_content).
+5. If you find multiple possible matches, list them for the user and ask for clarification.
+6. If no matches are found, inform the user that the file does not exist and offer to create it.
 
-# TOOL SELECTION PRIORITY
-1. **Read operations** (list, search, read): Execute immediately
-  - obsidian_list_files_in_vault → when user asks ""list"", ""show folders"", ""what files""
-  - obsidian_search_vault → when user asks ""find"", ""search for""
-  - obsidian_read_file → when user asks ""show content"", ""read""
+NORMALIZATION EXAMPLES:
+- User says: ""Project Ideas"" -> normalized: ""project ideas.md""
+- Vault has: ""💡 Project Ideas.md"" -> normalized: ""project ideas.md""
+- RESULT: MATCH! You will use the exact path ""💡 Project Ideas.md"" for the operation.
 
-2. **Write operations** (create, append, patch): Describe THEN confirm
-  - obsidian_create_file → ""create"", ""new file""
-  - obsidian_append_to_file → ""add to"", ""append""
-  - obsidian_patch_file → ""update"", ""modify"", ""change""
+- User says: ""Daily note"" -> normalized: ""daily note.md""
+- Vault has: ""📝 Daily Notes.md"" -> normalized: ""daily notes.md""
+- RESULT: MATCH! You will use the exact path ""📝 Daily Notes.md"" for the operation.
 
-3. **Destructive operations** (delete, move): Show preview THEN confirm
-  - obsidian_delete_file → ""delete"", ""remove""
-  - obsidian_move_file → ""move"", ""relocate""
+EXAMPLE WORKFLOW:
+User: ""Append 'meeting notes' to Project Ideas""
 
-# CONFIRMATION PROTOCOL
-For write/destructive operations, use this exact format:
+Step 1: List files
+Tool: obsidian_list_files_in_vault()
+Result: [""💡 Project Ideas.md"", ""📝 Daily Notes.md"", ...]
 
-```
-I will perform the following operations:
-- Create file: `path/to/file.md`
-- Append to file: `another/file.md` with content: ""[summary]""
+Step 2: Match filename
+User input normalized: ""project ideas.md""
+Check each file:
+- ""💡 Project Ideas.md"" → normalized: ""project ideas.md"" ✓ MATCH
+Found exact path: ""💡 Project Ideas.md""
 
-Please confirm to proceed.
-```
+Step 3: Append content
+Tool: obsidian_append_content(path: ""💡 Project Ideas.md"", content: ""meeting notes"")
 
-**DO NOT execute** write/destructive operations until user confirms.
+Step 4: Confirm
+Response: ""I will append 'meeting notes' to the file: 💡 Project Ideas.md. Please confirm to proceed.""
 
-# RESPONSE GUIDELINES
-- Use real emojis: ✓ ✗ 📁 📝 🔍 (not \\u codes)
-- Format with Markdown: **bold**, `code`, ### headers, - lists
-- When listing folders, show counts: ""📁 Projects (15 files)""
-- Keep responses concise unless user asks for detail
-
-# EXAMPLES
-User: ""List all folders""
-You: [Call obsidian_list_files_in_vault] → Format response with folder structure
-
-User: ""Create a meeting note""
-You: ""I will create file: `Meetings/2025-10-14-meeting.md` with template. Confirm?""
-
-User: ""Find notes about AI""
-You: [Call obsidian_search_vault with query=""AI""] → Show results with previews";
+CRITICAL:
+- Always use the EXACT vault path (including emojis) when calling MCP tools like obsidian_append_content or obsidian_patch_content. Never strip emojis from paths passed to tools.
+- To find a file by its name, you MUST use obsidian_list_files_in_vault() followed by normalization and matching. DO NOT use obsidian_simple_search or obsidian_complex_search for this purpose, as they search file contents, not filenames.
+";
     return new ObsidianAssistantService(llmFactory, mcpClient, instructions);
 });
 
@@ -234,7 +231,8 @@ app.MapPost("/vault/modify", async (ModifyRequest request, McpClient mcpClient, 
         var result = await mcpClient.CallToolAsync(op, arguments);
 
         string responseMessage = "Operation failed: No response from tool.";
-        bool isSuccess = !(result.IsError ?? true);
+        // Correctly determine success based on the IsError flag
+        bool isSuccess = !(result.IsError ?? false);
 
         if (result.Content?.FirstOrDefault() is ModelContextProtocol.Protocol.TextContentBlock textBlock)
         {
@@ -244,7 +242,7 @@ app.MapPost("/vault/modify", async (ModifyRequest request, McpClient mcpClient, 
         if (!isSuccess)
         {
             logger.LogError("MCP tool {ToolName} returned error: {Error}", op, responseMessage);
-            return Results.Ok(new ModifyResponse(false, $"MCP tool error: {responseMessage}", request.FilePath));
+            return Results.Ok(new ModifyResponse(false, responseMessage, request.FilePath));
         }
 
         logger.LogInformation("MCP tool {ToolName} completed successfully: {Message}", op, responseMessage);
