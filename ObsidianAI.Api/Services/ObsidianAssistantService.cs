@@ -124,7 +124,7 @@ namespace ObsidianAI.Api.Services
             var responseStream = _agent!.RunStreamingAsync(request.Message);
             var updateCount = 0;
 
-            await foreach (var update in responseStream.WithCancellation(cancellationToken))
+            await foreach (var update in responseStream.WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 updateCount++;
 

@@ -12,6 +12,59 @@ ObsidianAI is a .NET Aspire application designed to enhance your Obsidian vault 
 *   **Real-time Chat Interface**: A Blazor-based web frontend for seamless interaction with the AI assistant.
 *   **.NET Aspire Orchestration**: Leverages .NET Aspire for simplified development, deployment, and observability of distributed applications.
 
+## Microsoft Agent Framework
+
+
+### Package Dependencies
+The project uses the Microsoft Agent Framework through these NuGet packages:
+- **Microsoft.Agents.AI.OpenAI** (v1.0.0-preview.251009.1) - Main framework package
+- **Microsoft.Agents.AI** - Core agent functionality
+- **Microsoft.Agents.AI.Abstractions** - Framework abstractions
+
+## Key Usage Locations
+
+### 1. Client Factory Implementations
+**Files:** [`LmStudioClientFactory.cs`](ObsidianAI.Api/Services/LmStudioClientFactory.cs:1) and [`OpenRouterClientFactory.cs`](ObsidianAI.Api/Services/OpenRouterClientFactory.cs:1)
+
+Both factories use the framework's [`IChatClient`](ObsidianAI.Api/Services/ILlmClientFactory.cs:14) interface and the `.AsIChatClient()` extension method from `Microsoft.Agents.AI` to wrap OpenAI-compatible clients:
+
+```csharp
+using Microsoft.Agents.AI;
+// ...
+return openAIClient.GetChatClient(model).AsIChatClient();
+```
+
+### 2. ObsidianAssistantService - Core Agent Implementation
+**File:** [`ObsidianAssistantService.cs`](ObsidianAI.Api/Services/ObsidianAssistantService.cs:1)
+
+This is the primary usage location where the Microsoft Agent Framework is leveraged to create AI agents with tool capabilities:
+
+#### Key Framework Usage:
+- **Agent Creation** (lines 76-80): Creates a [`ChatClientAgent`](ObsidianAI.Api/Services/ObsidianAssistantService.cs:76) using the framework's `.CreateAIAgent()` extension method
+- **Tool Integration** (line 79): Converts MCP tools to [`AITool`](ObsidianAI.Api/Services/ObsidianAssistantService.cs:79) objects that the agent can use
+- **Streaming Support** (lines 97-106, 114-168): Uses the framework's streaming capabilities with [`RunAsync()`](ObsidianAI.Api/Services/ObsidianAssistantService.cs:104) and [`RunStreamingAsync()`](ObsidianAI.Api/Services/ObsidianAssistantService.cs:124) methods
+- **Function Call Detection** (lines 157-162): Detects and handles [`FunctionCallContent`](ObsidianAI.Api/Services/ObsidianAssistantService.cs:157) from the framework
+
+#### Agent Configuration:
+The service creates an agent with:
+- **Name**: "ObsidianAssistant"
+- **Instructions**: Custom instructions for Obsidian vault management
+- **Tools**: MCP tools converted to AITool format for file operations
+
+### 3. Integration Pattern
+The framework integrates with:
+- **MCP (Model Context Protocol)**: Tools are discovered via MCP and converted to AITool format
+- **Multiple LLM Providers**: Works with both LM Studio and OpenRouter through the IChatClient abstraction
+- **Streaming Architecture**: Supports real-time streaming responses with incremental updates
+
+## Architecture Benefits
+The Microsoft Agent Framework provides:
+- **Standardized Agent Interface**: Consistent API for different LLM providers
+- **Tool Integration**: Seamless integration of external tools (MCP tools) into agent capabilities
+- **Streaming Support**: Built-in streaming capabilities for real-time responses
+- **Function Calling**: Native support for detecting and handling tool calls during conversations
+
+
 ## Project Structure
 
 The solution is composed of three main projects:

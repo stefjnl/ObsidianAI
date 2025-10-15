@@ -1,11 +1,10 @@
 using Microsoft.Agents.AI;
 using System;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using System.ClientModel;
-using ObsidianAI.Api.Models;
+using ObsidianAI.Infrastructure.Configuration;
 
 namespace ObsidianAI.Api.Services
 {
