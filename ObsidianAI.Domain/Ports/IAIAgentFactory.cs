@@ -17,8 +17,9 @@ namespace ObsidianAI.Domain.Ports
         /// </summary>
         /// <param name="instructions">System or agent instructions guiding the chat agent behavior.</param>
         /// <param name="tools">Optional collection of AI tools (e.g., from MCP) to provide to the agent.</param>
+        /// <param name="cancellationToken">A token used to cancel the agent creation process.</param>
         /// <returns>An initialized <see cref="IChatAgent"/> ready to process messages.</returns>
-        Task<IChatAgent> CreateAgentAsync(string instructions, System.Collections.Generic.IEnumerable<object>? tools = null);
+        Task<IChatAgent> CreateAgentAsync(string instructions, System.Collections.Generic.IEnumerable<object>? tools = null, System.Threading.CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Returns the default or configured model name used by the underlying provider.

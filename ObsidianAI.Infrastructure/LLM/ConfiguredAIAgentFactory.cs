@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using ObsidianAI.Domain.Ports;
 using ObsidianAI.Infrastructure.Configuration;
+using System.Threading;
 
 namespace ObsidianAI.Infrastructure.LLM;
 
@@ -32,12 +33,12 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
     }
 
     /// <inheritdoc />
-    public async Task<IChatAgent> CreateAgentAsync(string instructions, System.Collections.Generic.IEnumerable<object>? tools = null)
+    public async Task<IChatAgent> CreateAgentAsync(string instructions, System.Collections.Generic.IEnumerable<object>? tools = null, CancellationToken cancellationToken = default)
     {
         return ProviderName.Equals("LMStudio", StringComparison.OrdinalIgnoreCase)
-            ? await LmStudioChatAgent.CreateAsync(_options, instructions, tools)
+            ? await LmStudioChatAgent.CreateAsync(_options, instructions, tools, cancellationToken).ConfigureAwait(false)
             : ProviderName.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase)
-                ? await OpenRouterChatAgent.CreateAsync(_options, instructions, tools)
-                : await LmStudioChatAgent.CreateAsync(_options, instructions, tools);
+                ? await OpenRouterChatAgent.CreateAsync(_options, instructions, tools, cancellationToken).ConfigureAwait(false)
+                : await LmStudioChatAgent.CreateAsync(_options, instructions, tools, cancellationToken).ConfigureAwait(false);
     }
 }

@@ -6,9 +6,11 @@
 @using ObsidianAI.Web.Components.Shared
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Text.RegularExpressions
+@using Microsoft.Extensions.Logging
 @inject IChatService ChatService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
+@inject ILogger<Chat> Logger
 
 <ChatHeader OnVaultClick="OpenVault" OnSettingsClick="OpenSettings" OnHistoryClick="ShowHistory" />
 
@@ -38,6 +40,18 @@
     private bool isOpenRouter = false;
     private int tokenBatchCount = 0;
     private const int TokenBatchSize = 3;
+    private static readonly Regex FileOpPattern1 = new(
+        @"(?i)(append|create|write|modify|patch|delete)\s+to\s+file:\s*[`""']?([^`""'\n]+\.md)[`""']?\s+with\s+content:\s*[""']([^""'\n]+)[""']",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
+    private static readonly Regex FileOpPattern2 = new(
+        @"(?i)(append|create|write|modify|patch|delete)\s+(?:the\s+)?(?:content:?\s*)?[""']([^""'\n]+?)[""']?\s+(?:to|in)\s+(?:the\s+)?(?:file:?\s*)?[`""']?([^`""'\n.]+\.md)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
+    private static readonly Regex CompletedOpPattern = new(
+        @"(?i)(created|appended|modified|patched|wrote)\s+(?:to\s+)?(?:file:?\s*)?[`""']?([^`""'\n]+\.md)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
 
     protected override async Task OnInitializedAsync()
     {
@@ -436,128 +450,144 @@
         await ScrollToBottom();
     }
 
-private Task ParseResponseForComponents(string response)
-{
-    // Check if this is a confirmation request (agent asking permission)
-    if (ContainsConfirmationKeywords(response))
+    private Task ParseResponseForComponents(string response)
     {
-        // Pattern 1: "Append to file: X with content: Y"
-        var fileOpPattern1 = new Regex(
-            @"(?i)(append|create|write|modify|patch|delete)\s+to\s+file:\s*[`""']?([^`""'\n]+\.md)[`""']?\s+with\s+content:\s*[""']([^""'\n]+)[""']",
-            RegexOptions.IgnoreCase);
-        var fileOpMatch = fileOpPattern1.Match(response);
-
-        // Pattern 2: "append [content] to [file]"
-        if (!fileOpMatch.Success)
+        if (string.IsNullOrWhiteSpace(response))
         {
-            var fileOpPattern2 = new Regex(
-                @"(?i)(append|create|write|modify|patch|delete)\s+(?:the\s+)?(?:content:?\s*)?[""']([^""'\n]+?)[""']?\s+(?:to|in)\s+(?:the\s+)?(?:file:?\s*)?[`""']?([^`""'\n.]+\.md)",
-                RegexOptions.IgnoreCase);
-            fileOpMatch = fileOpPattern2.Match(response);
+            return Task.CompletedTask;
         }
 
-        if (fileOpMatch.Success)
+        if (response.Length > 10_000)
         {
-            var operation = fileOpMatch.Groups[1].Value.Trim();
-            string content;
-            string filePath;
+            Logger?.LogWarning("Assistant response too large for parsing ({Length})", response.Length);
+            return Task.CompletedTask;
+        }
 
-            // Check which pattern matched and extract accordingly
-            if (response.Contains("with content:"))
+        try
+        {
+            if (ContainsConfirmationKeywords(response))
             {
-                filePath = fileOpMatch.Groups[2].Value.Trim();
-                content = fileOpMatch.Groups[3].Value.Trim();
-            }
-            else
-            {
-                content = fileOpMatch.Groups[2].Value.Trim();
-                filePath = fileOpMatch.Groups[3].Value.Trim();
-            }
+                var fileOpMatch = FileOpPattern1.Match(response);
 
-            // Create ActionCard for confirmation
-            var actionCard = new ActionCardData
-            {
-                Id = Guid.NewGuid().ToString(),
-                Title = $"{char.ToUpper(operation[0])}{operation.Substring(1).ToLower()} Content",
-                OperationType = operation.ToLowerInvariant() switch
+                if (!fileOpMatch.Success)
                 {
-                    "append" => ActionOperationType.Other,
-                    "create" => ActionOperationType.Create,
-                    "delete" => ActionOperationType.Delete,
-                    _ => ActionOperationType.Other
-                },
-                Actions = new List<PlannedAction>
+                    fileOpMatch = FileOpPattern2.Match(response);
+                }
+
+                if (fileOpMatch.Success)
                 {
-                    new PlannedAction
+                    var operation = fileOpMatch.Groups[1].Value.Trim();
+                    string content;
+                    string filePath;
+
+                    if (response.Contains("with content:", StringComparison.OrdinalIgnoreCase))
                     {
-                        Type = operation.ToLowerInvariant() switch
-                        {
-                            "append" => ActionType.Modify,
-                            "create" => ActionType.Create,
-                            "delete" => ActionType.Delete,
-                            "modify" => ActionType.Modify,
-                            "patch" => ActionType.Modify,
-                            "write" => ActionType.Modify,
-                            _ => ActionType.Other
-                        },
-                        Source = filePath,
-                        Destination = filePath,
-                        Content = content,
-                        Operation = operation.ToLowerInvariant(),
-                        Description = $"{char.ToUpper(operation[0])}{operation.Substring(1).ToLower()} \"{content}\" → {filePath}"
+                        filePath = fileOpMatch.Groups[2].Value.Trim();
+                        content = fileOpMatch.Groups[3].Value.Trim();
                     }
-                },
-                Status = ActionCardStatus.Pending
-            };
+                    else
+                    {
+                        content = fileOpMatch.Groups[2].Value.Trim();
+                        filePath = fileOpMatch.Groups[3].Value.Trim();
+                    }
 
-            // Attach to the current AI message in history
-            int index = -1;
-            if (currentAiMessage != null)
-            {
-                index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
-            }
-            if (index < 0)
-            {
-                index = conversationHistory.FindLastIndex(m => m.Sender == MessageSender.AI);
-            }
+                    var actionCard = new ActionCardData
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        Title = $"{char.ToUpper(operation[0])}{operation.Substring(1).ToLower()} Content",
+                        OperationType = operation.ToLowerInvariant() switch
+                        {
+                            "append" => ActionOperationType.Other,
+                            "create" => ActionOperationType.Create,
+                            "delete" => ActionOperationType.Delete,
+                            _ => ActionOperationType.Other
+                        },
+                        Actions = new List<PlannedAction>
+                        {
+                            new PlannedAction
+                            {
+                                Type = operation.ToLowerInvariant() switch
+                                {
+                                    "append" => ActionType.Modify,
+                                    "create" => ActionType.Create,
+                                    "delete" => ActionType.Delete,
+                                    "modify" => ActionType.Modify,
+                                    "patch" => ActionType.Modify,
+                                    "write" => ActionType.Modify,
+                                    _ => ActionType.Other
+                                },
+                                Source = filePath,
+                                Destination = filePath,
+                                Content = content,
+                                Operation = operation.ToLowerInvariant(),
+                                Description = $"{char.ToUpper(operation[0])}{operation.Substring(1).ToLower()} \"{content}\" → {filePath}"
+                            }
+                        },
+                        Status = ActionCardStatus.Pending
+                    };
 
-            if (index >= 0)
-            {
-                var msg = conversationHistory[index];
-                var updated = msg with
-                {
-                    ActionCard = actionCard,
-                    ProcessingType = ProcessingType.None
-                };
-                conversationHistory[index] = updated;
-
-                if (currentAiMessage != null && currentAiMessage.Id == msg.Id)
-                {
-                    currentAiMessage = updated;
+                    AttachActionCard(actionCard);
+                    return Task.CompletedTask;
                 }
             }
 
-            return Task.CompletedTask;
+            var completedOpMatch = CompletedOpPattern.Match(response);
+            if (completedOpMatch.Success)
+            {
+                var action = completedOpMatch.Groups[1].Value.Trim();
+                var filePath = completedOpMatch.Groups[2].Value.Trim();
+
+                var fileOperationData = new FileOperationData
+                {
+                    Action = char.ToUpper(action[0]) + action.Substring(1),
+                    FilePath = filePath
+                };
+
+                AttachFileOperation(fileOperationData);
+            }
+        }
+        catch (RegexMatchTimeoutException ex)
+        {
+            Logger?.LogError(ex, "Regex timeout while parsing assistant response");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void AttachActionCard(ActionCardData actionCard)
+    {
+        var index = -1;
+        if (currentAiMessage != null)
+        {
+            index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+        }
+        if (index < 0)
+        {
+            index = conversationHistory.FindLastIndex(m => m.Sender == MessageSender.AI);
+        }
+
+        if (index >= 0)
+        {
+            var msg = conversationHistory[index];
+            var updated = msg with
+            {
+                ActionCard = actionCard,
+                ProcessingType = ProcessingType.None
+            };
+            conversationHistory[index] = updated;
+
+            if (currentAiMessage != null && currentAiMessage.Id == msg.Id)
+            {
+                currentAiMessage = updated;
+            }
+
+            StateHasChanged();
         }
     }
 
-    // If not a confirmation request, check if it's a completed operation
-    var completedOpMatch = Regex.Match(response,
-        @"(?i)(created|appended|modified|patched|wrote)\s+(?:to\s+)?(?:file:?\s*)?[`""']?([^`""'\n]+\.md)",
-        RegexOptions.IgnoreCase);
-
-    if (completedOpMatch.Success)
+    private void AttachFileOperation(FileOperationData fileOperationData)
     {
-        var action = completedOpMatch.Groups[1].Value.Trim();
-        var filePath = completedOpMatch.Groups[2].Value.Trim();
-
-        var fileOperationData = new FileOperationData
-        {
-            Action = char.ToUpper(action[0]) + action.Substring(1),
-            FilePath = filePath
-        };
-
-        int index = -1;
+        var index = -1;
         if (currentAiMessage != null)
         {
             index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
@@ -581,11 +611,10 @@ private Task ParseResponseForComponents(string response)
             {
                 currentAiMessage = updated;
             }
+
+            StateHasChanged();
         }
     }
-
-    return Task.CompletedTask;
-}
 
     private static bool ContainsConfirmationKeywords(string text)
     {

@@ -7,6 +7,7 @@ using System.ClientModel;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace ObsidianAI.Infrastructure.LLM
 {
@@ -48,9 +49,9 @@ namespace ObsidianAI.Infrastructure.LLM
         /// <summary>
         /// Creates a new instance of the LmStudioChatAgent with optional MCP tools.
         /// </summary>
-        public static async Task<LmStudioChatAgent> CreateAsync(IOptions<AppSettings> appOptions, string instructions, System.Collections.Generic.IEnumerable<object>? tools = null)
+        public static Task<LmStudioChatAgent> CreateAsync(IOptions<AppSettings> appOptions, string instructions, System.Collections.Generic.IEnumerable<object>? tools = null, CancellationToken ct = default)
         {
-            return await Task.FromResult(new LmStudioChatAgent(appOptions, instructions, tools));
+            return Task.FromResult(new LmStudioChatAgent(appOptions, instructions, tools));
         }
 
         /// <inheritdoc />

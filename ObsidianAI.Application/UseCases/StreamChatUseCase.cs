@@ -6,7 +6,7 @@ namespace ObsidianAI.Application.UseCases;
 public class StreamChatUseCase
 {
     private readonly ObsidianAI.Domain.Ports.IAIAgentFactory _agentFactory;
-    private readonly ModelContextProtocol.Client.McpClient? _mcpClient;
+    private readonly ObsidianAI.Application.Services.IMcpClientProvider? _mcpClientProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamChatUseCase"/> class.
@@ -15,10 +15,10 @@ public class StreamChatUseCase
     /// <param name="mcpClient">Optional MCP client for fetching available tools.</param>
     public StreamChatUseCase(
         ObsidianAI.Domain.Ports.IAIAgentFactory agentFactory,
-        ModelContextProtocol.Client.McpClient? mcpClient = null)
+        ObsidianAI.Application.Services.IMcpClientProvider? mcpClientProvider = null)
     {
         _agentFactory = agentFactory;
-        _mcpClient = mcpClient;
+        _mcpClientProvider = mcpClientProvider;
     }
 
     /// <summary>
@@ -40,12 +40,16 @@ public class StreamChatUseCase
 
         // Fetch MCP tools if available
         System.Collections.Generic.IEnumerable<object>? tools = null;
-        if (_mcpClient != null)
+        if (_mcpClientProvider != null)
         {
-            tools = await _mcpClient.ListToolsAsync();
+            var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
+            if (mcpClient != null)
+            {
+                tools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+            }
         }
 
-        var agent = await _agentFactory.CreateAgentAsync(instructions, tools);
+    var agent = await _agentFactory.CreateAgentAsync(instructions, tools, ct).ConfigureAwait(false);
 
         await foreach (var evt in agent.StreamAsync(input.Message, ct).ConfigureAwait(false))
         {

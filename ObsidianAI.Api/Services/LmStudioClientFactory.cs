@@ -1,10 +1,10 @@
-using Microsoft.Agents.AI;
 using System;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using System.ClientModel;
 using ObsidianAI.Infrastructure.Configuration;
+using ObsidianAI.Infrastructure.LLM;
 
 namespace ObsidianAI.Api.Services
 {
@@ -28,19 +28,33 @@ namespace ObsidianAI.Api.Services
         /// <inheritdoc />
         public IChatClient CreateChatClient()
         {
-            var endpoint = _settings.Endpoint ?? "http://localhost:1234/v1";
-            var apiKey = _settings.ApiKey ?? "lm-studio";
-            var model = _settings.Model ?? "openai/gpt-oss-20b";
+            var endpoint = _settings.Endpoint?.Trim();
+            if (string.IsNullOrEmpty(endpoint))
+            {
+                throw new InvalidOperationException("LMStudio endpoint not configured");
+            }
+
+            var apiKey = _settings.ApiKey?.Trim();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                throw new InvalidOperationException("LMStudio API key not configured");
+            }
+
+            var model = _settings.Model?.Trim();
+            if (string.IsNullOrEmpty(model))
+            {
+                throw new InvalidOperationException("LMStudio model not configured");
+            }
 
             var openAIClient = new OpenAIClient(
                 new ApiKeyCredential(apiKey),
-                new OpenAIClientOptions { Endpoint = new Uri(endpoint.Trim()) }
+                new OpenAIClientOptions { Endpoint = new Uri(endpoint) }
             );
 
             return openAIClient.GetChatClient(model).AsIChatClient();
         }
 
         /// <inheritdoc />
-        public string GetModelName() => _settings.Model ?? "unknown";
+    public string GetModelName() => _settings.Model?.Trim() ?? string.Empty;
     }
 }

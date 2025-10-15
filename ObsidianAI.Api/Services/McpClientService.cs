@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
+using ObsidianAI.Application.Services;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,29 +11,40 @@ namespace ObsidianAI.Api.Services
     /// <summary>
     /// Service to handle async initialization of McpClient
     /// </summary>
-    public class McpClientService : IHostedService
+    public class McpClientService : IHostedService, IMcpClientProvider
     {
-        private readonly Lazy<Task<McpClient?>> _lazyClient;
+        private readonly SemaphoreSlim _initLock = new(1, 1);
         private McpClient? _client;
         private readonly ILogger<McpClientService> _logger;
-        // No need for _isInitialized field since we rely on the lazy initialization
+        private bool _initialized;
 
         public McpClientService(ILogger<McpClientService> logger)
         {
             _logger = logger;
-            _lazyClient = new Lazy<Task<McpClient?>>(CreateClientAsync);
         }
 
-        public McpClient? Client
+        public async Task<McpClient?> GetClientAsync(CancellationToken cancellationToken = default)
         {
-            get
+            if (_initialized)
             {
-                if (_client == null)
-                {
-                    // Wait for the client to be created (only happens once)
-                    _client = _lazyClient.Value.GetAwaiter().GetResult();
-                }
                 return _client;
+            }
+
+            await _initLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_initialized)
+                {
+                    return _client;
+                }
+
+                _client = await CreateClientAsync(cancellationToken).ConfigureAwait(false);
+                _initialized = true;
+                return _client;
+            }
+            finally
+            {
+                _initLock.Release();
             }
         }
 
@@ -40,9 +52,8 @@ namespace ObsidianAI.Api.Services
         {
             try
             {
-                // Initialize the client during startup
-                _client = await _lazyClient.Value;
-                if (_client != null)
+                var client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+                if (client != null)
                 {
                     _logger.LogInformation("MCP client initialized successfully");
                 }
@@ -64,7 +75,7 @@ namespace ObsidianAI.Api.Services
             return Task.CompletedTask;
         }
 
-        private async Task<McpClient?> CreateClientAsync()
+        private async Task<McpClient?> CreateClientAsync(CancellationToken cancellationToken)
         {
             try
             {
@@ -80,7 +91,7 @@ namespace ObsidianAI.Api.Services
                     Endpoint = new Uri(mcpEndpoint)
                 };
                 var transport = new HttpClientTransport(options);
-                var client = await McpClient.CreateAsync(transport);
+                var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation("Successfully connected to MCP server at {McpEndpoint}", mcpEndpoint);
                 return client;
             }

@@ -4,8 +4,9 @@ namespace ObsidianAI.Infrastructure.Vault
     using System.Collections.Generic;
     using System.Threading;
     using System.Threading.Tasks;
-    using ModelContextProtocol.Client;
+    using Microsoft.Extensions.Logging;
     using ModelContextProtocol.Protocol;
+    using ObsidianAI.Application.Services;
     using ObsidianAI.Domain.Models;
     using ObsidianAI.Domain.Ports;
 
@@ -15,15 +16,18 @@ namespace ObsidianAI.Infrastructure.Vault
     /// </summary>
     public class McpVaultToolExecutor : IVaultToolExecutor
     {
-        private readonly McpClient _mcpClient;
+    private readonly IMcpClientProvider _clientProvider;
+    private readonly ILogger<McpVaultToolExecutor> _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="McpVaultToolExecutor"/> class.
         /// </summary>
-        /// <param name="mcpClient">The MCP client instance used to execute tool calls. Can be null if MCP is unavailable.</param>
-        public McpVaultToolExecutor(McpClient mcpClient)
+        /// <param name="clientProvider">Provider for accessing the MCP client instance.</param>
+        /// <param name="logger">Logger used to record execution details.</param>
+        public McpVaultToolExecutor(IMcpClientProvider clientProvider, ILogger<McpVaultToolExecutor> logger)
         {
-            _mcpClient = mcpClient ?? throw new ArgumentNullException(nameof(mcpClient));
+            _clientProvider = clientProvider ?? throw new ArgumentNullException(nameof(clientProvider));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <inheritdoc/>
@@ -86,7 +90,14 @@ namespace ObsidianAI.Infrastructure.Vault
         {
             try
             {
-                var result = await _mcpClient.CallToolAsync(toolName, args);
+                var client = await _clientProvider.GetClientAsync(ct).ConfigureAwait(false);
+                if (client == null)
+                {
+                    _logger.LogWarning("MCP client unavailable. Tool {ToolName} cannot be executed.", toolName);
+                    return new OperationResult(false, "MCP server is not available. Vault operations are disabled.", filePath);
+                }
+
+                var result = await client.CallToolAsync(toolName, args, cancellationToken: ct).ConfigureAwait(false);
 
                 bool isSuccess = !(result.IsError ?? false);
 
@@ -96,8 +107,14 @@ namespace ObsidianAI.Infrastructure.Vault
 
                 return new OperationResult(isSuccess, message, filePath);
             }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Vault tool {ToolName} execution was cancelled.", toolName);
+                return new OperationResult(false, "Operation was cancelled.", filePath);
+            }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error executing vault tool {ToolName} for {FilePath}", toolName, filePath);
                 return new OperationResult(false, ex.Message, filePath);
             }
         }
