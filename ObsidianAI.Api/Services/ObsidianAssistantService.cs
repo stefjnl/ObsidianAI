@@ -1,7 +1,9 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using ModelContextProtocol.Client;
+using Microsoft.Extensions.Logging;
 using ObsidianAI.Api.Models;
+using ObsidianAI.Application.Services;
+using ObsidianAI.Infrastructure.LLM;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,7 +21,7 @@ namespace ObsidianAI.Api.Services
     public sealed class ObsidianAssistantService
     {
         private readonly ILlmClientFactory _llmFactory;
-        private readonly McpClient _mcpClient;
+    private readonly IMcpClientProvider _mcpClientProvider;
         private readonly IChatClient _chatClient;
         private ChatClientAgent? _agent;
         private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -32,46 +34,55 @@ namespace ObsidianAI.Api.Services
         /// Initializes the assistant service, creating the chat client and agent with available MCP tools.
         /// </summary>
         /// <param name="llmFactory">Factory to create the configured IChatClient.</param>
-        /// <param name="mcpClient">Connected MCP client used to discover available tools.</param>
-        public ObsidianAssistantService(ILlmClientFactory llmFactory, McpClient mcpClient)
+        /// <param name="mcpClientProvider">Provider used to access the MCP client for tool discovery.</param>
+        public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpClientProvider mcpClientProvider)
         {
             _llmFactory = llmFactory ?? throw new ArgumentNullException(nameof(llmFactory));
-            _mcpClient = mcpClient ?? throw new ArgumentNullException(nameof(mcpClient));
+            _mcpClientProvider = mcpClientProvider ?? throw new ArgumentNullException(nameof(mcpClientProvider));
             _chatClient = _llmFactory.CreateChatClient();
             _instructions = DefaultInstructions;
             _logger = null;
         }
 
-        public ObsidianAssistantService(ILlmClientFactory llmFactory, McpClient mcpClient, string instructions)
+        public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpClientProvider mcpClientProvider, string instructions)
         {
             _llmFactory = llmFactory ?? throw new ArgumentNullException(nameof(llmFactory));
-            _mcpClient = mcpClient ?? throw new ArgumentNullException(nameof(mcpClient));
+            _mcpClientProvider = mcpClientProvider ?? throw new ArgumentNullException(nameof(mcpClientProvider));
             _chatClient = _llmFactory.CreateChatClient();
             _instructions = string.IsNullOrWhiteSpace(instructions) ? DefaultInstructions : instructions;
             _logger = null;
         }
 
-        public ObsidianAssistantService(ILlmClientFactory llmFactory, McpClient mcpClient, string instructions, ILogger<ObsidianAssistantService> logger)
+        public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpClientProvider mcpClientProvider, string instructions, ILogger<ObsidianAssistantService> logger)
         {
             _llmFactory = llmFactory ?? throw new ArgumentNullException(nameof(llmFactory));
-            _mcpClient = mcpClient ?? throw new ArgumentNullException(nameof(mcpClient));
+            _mcpClientProvider = mcpClientProvider ?? throw new ArgumentNullException(nameof(mcpClientProvider));
             _chatClient = _llmFactory.CreateChatClient();
             _instructions = string.IsNullOrWhiteSpace(instructions) ? DefaultInstructions : instructions;
             _logger = logger;
         }
 
-        private async Task InitializeAgentAsync()
+        private async Task InitializeAgentAsync(CancellationToken cancellationToken)
         {
             if (_isInitialized)
                 return;
 
-            await _semaphore.WaitAsync();
+            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (!_isInitialized)
                 {
-                    // Fetch tools asynchronously
-                    var tools = await _mcpClient.ListToolsAsync();
+                    var tools = Array.Empty<object>();
+                    var mcpClient = await _mcpClientProvider.GetClientAsync(cancellationToken).ConfigureAwait(false);
+                    if (mcpClient != null)
+                    {
+                        var discovered = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+                        tools = discovered.ToArray();
+                    }
+                    else
+                    {
+                        _logger?.LogWarning("MCP client unavailable. Initializing assistant without tools.");
+                    }
 
                     _agent = _chatClient.CreateAIAgent(
                         name: "ObsidianAssistant",
@@ -99,9 +110,10 @@ namespace ObsidianAI.Api.Services
             if (request is null) throw new ArgumentNullException(nameof(request));
 
             // Ensure agent is initialized
-            await InitializeAgentAsync();
+            await InitializeAgentAsync(cancellationToken).ConfigureAwait(false);
 
-            var response = await _agent!.RunAsync(request.Message);
+            var agent = _agent ?? throw new InvalidOperationException("Agent not initialized");
+            var response = await agent.RunAsync(request.Message);
             return response?.Text ?? string.Empty;
         }
 
@@ -118,13 +130,15 @@ namespace ObsidianAI.Api.Services
             if (request is null) throw new ArgumentNullException(nameof(request));
 
             // Ensure agent is initialized
-            await InitializeAgentAsync();
+            await InitializeAgentAsync(cancellationToken).ConfigureAwait(false);
+
+            var agent = _agent ?? throw new InvalidOperationException("Agent not initialized");
 
             _logger?.LogInformation("Starting RunStreamingAsync for message: {Message}", request.Message);
-            var responseStream = _agent!.RunStreamingAsync(request.Message);
+            var responseStream = agent.RunStreamingAsync(request.Message);
             var updateCount = 0;
 
-            await foreach (var update in responseStream.WithCancellation(cancellationToken))
+            await foreach (var update in responseStream.WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 updateCount++;
 

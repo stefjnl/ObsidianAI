@@ -1,0 +1,46 @@
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using ObsidianAI.Application.Services;
+using ObsidianAI.Domain.Ports;
+using ObsidianAI.Infrastructure.Configuration;
+using ObsidianAI.Infrastructure.LLM;
+using ObsidianAI.Infrastructure.Vault;
+
+namespace ObsidianAI.Infrastructure.DI;
+
+/// <summary>
+/// Extension methods for configuring ObsidianAI services.
+/// </summary>
+public static class ServiceCollectionExtensions
+{
+    /// <summary>
+    /// Adds ObsidianAI services to the dependency injection container.
+    /// </summary>
+    /// <param name="services">The service collection to add services to.</param>
+    /// <param name="configuration">The application configuration.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddObsidianAI(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<AppSettings>(options =>
+        {
+            configuration.Bind(options);
+        });
+        services.AddSingleton<IAIAgentFactory, ConfiguredAIAgentFactory>();
+        services.AddSingleton<IVaultToolExecutor>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<McpVaultToolExecutor>>();
+            var provider = sp.GetService<IMcpClientProvider>();
+            if (provider == null)
+            {
+                logger.LogWarning("MCP client provider is not available. Using null vault tool executor - vault operations will be disabled.");
+                return new NullVaultToolExecutor();
+            }
+
+            return new McpVaultToolExecutor(provider, logger);
+        });
+
+        return services;
+    }
+}

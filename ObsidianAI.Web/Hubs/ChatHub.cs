@@ -35,18 +35,41 @@ public class ChatHub : Hub
                 history = history?.Select(h => new { role = h.Sender == MessageSender.User ? "user" : "assistant", content = h.Content }).ToList()
             };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, "/chat/stream")
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/chat/stream")
             {
                 Content = JsonContent.Create(requestBody)
             };
 
-            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            using var response = await httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                Context.ConnectionAborted).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
-            using var stream = await response.Content.ReadAsStreamAsync();
+            await using var stream = await response.Content.ReadAsStreamAsync(Context.ConnectionAborted).ConfigureAwait(false);
             using var reader = new StreamReader(stream);
 
             var fullResponse = new StringBuilder();
+            var tokenBuffer = new StringBuilder();
+            const int BufferFlushThreshold = 50;
+
+            async Task FlushTokenBufferAsync(bool force = false)
+            {
+                if (tokenBuffer.Length == 0)
+                {
+                    return;
+                }
+
+                if (!force && tokenBuffer.Length < BufferFlushThreshold)
+                {
+                    return;
+                }
+
+                var payload = tokenBuffer.ToString();
+                tokenBuffer.Clear();
+                await Clients.Caller.SendAsync("ReceiveToken", payload);
+            }
+
             string? line;
             string? currentEvent = null;
             bool completionSent = false;
@@ -71,6 +94,7 @@ public class ChatHub : Hub
 
                     if (data == "[DONE]")
                     {
+                        await FlushTokenBufferAsync(force: true);
                         var finalResponse = TextDecoderService.DecodeSurrogatePairs(fullResponse.ToString());
 
                         // Log final response with escaped characters
@@ -91,6 +115,7 @@ public class ChatHub : Hub
                     }
                     else if (currentEvent == "error")
                     {
+                        await FlushTokenBufferAsync(force: true);
                         await Clients.Caller.SendAsync("Error", data);
                         currentEvent = null;
                         completionSent = true;
@@ -107,7 +132,8 @@ public class ChatHub : Hub
                             decodedChunk.TrimStart().StartsWith("*"))
                         {
                             fullResponse.Append("\n\n");
-                            await Clients.Caller.SendAsync("ReceiveToken", "\n\n");
+                            tokenBuffer.Append("\n\n");
+                            await FlushTokenBufferAsync(force: true);
                         }
                         // Add newline after list when transitioning to regular text
                         // Only trigger if we already have a newline (list item ended) and new content isn't a list item
@@ -120,13 +146,14 @@ public class ChatHub : Hub
                             if (lastLine.StartsWith("*"))
                             {
                                 fullResponse.Append("\n");
-                                await Clients.Caller.SendAsync("ReceiveToken", "\n");
+                                tokenBuffer.Append("\n");
+                                await FlushTokenBufferAsync(force: true);
                             }
                         }
 
                         fullResponse.Append(decodedChunk);
-                        await Clients.Caller.SendAsync("ReceiveToken", decodedChunk);
-                        await Task.Delay(10);
+                        tokenBuffer.Append(decodedChunk);
+                        await FlushTokenBufferAsync();
                     }
                 }
                 else if (!string.IsNullOrWhiteSpace(line))
@@ -140,7 +167,8 @@ public class ChatHub : Hub
                         decodedChunk.TrimStart().StartsWith("*"))
                     {
                         fullResponse.Append("\n\n");
-                        await Clients.Caller.SendAsync("ReceiveToken", "\n\n");
+                        tokenBuffer.Append("\n\n");
+                        await FlushTokenBufferAsync(force: true);
                     }
                     // Add newline after list when transitioning to regular text
                     // Only trigger if we already have a newline (list item ended) and new content isn't a list item
@@ -153,7 +181,8 @@ public class ChatHub : Hub
                         if (lastLine.StartsWith("*"))
                         {
                             fullResponse.Append("\n");
-                            await Clients.Caller.SendAsync("ReceiveToken", "\n");
+                            tokenBuffer.Append("\n");
+                            await FlushTokenBufferAsync(force: true);
                         }
                     }
 
@@ -161,8 +190,8 @@ public class ChatHub : Hub
                     // Don't append extra newline - it breaks multiline content
                     // fullResponse.Append("\n");
 
-                    await Clients.Caller.SendAsync("ReceiveToken", decodedChunk);
-                    await Task.Delay(10);
+                    tokenBuffer.Append(decodedChunk);
+                    await FlushTokenBufferAsync();
                 }
                 else if (string.IsNullOrWhiteSpace(line))
                 {
@@ -172,6 +201,7 @@ public class ChatHub : Hub
 
             if (!completionSent && fullResponse.Length > 0)
             {
+                await FlushTokenBufferAsync(force: true);
                 var finalResponse = TextDecoderService.DecodeSurrogatePairs(fullResponse.ToString());
 
                 // Log final response with escaped characters
@@ -185,10 +215,19 @@ public class ChatHub : Hub
 
             _logger.LogInformation("Message streaming complete (Total lines: {LineCount})", lineCount);
         }
+        catch (HttpRequestException httpEx)
+        {
+            _logger.LogError(httpEx, "HTTP error processing streaming message");
+            await Clients.Caller.SendAsync("Error", "Unable to connect to the AI service.");
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogWarning("Streaming message cancelled for connection {ConnectionId}", Context.ConnectionId);
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing streaming message");
-            await Clients.Caller.SendAsync("Error", $"Failed to process message: {ex.Message}");
+            _logger.LogError(ex, "Unexpected error processing streaming message");
+            await Clients.Caller.SendAsync("Error", "An unexpected error occurred while processing your message.");
         }
     }
 

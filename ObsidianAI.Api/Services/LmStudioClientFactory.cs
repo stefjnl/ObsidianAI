@@ -1,9 +1,10 @@
-using Microsoft.Agents.AI;
 using System;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using OpenAI;
 using System.ClientModel;
+using ObsidianAI.Infrastructure.Configuration;
+using ObsidianAI.Infrastructure.LLM;
 
 namespace ObsidianAI.Api.Services
 {
@@ -13,33 +14,47 @@ namespace ObsidianAI.Api.Services
     /// </summary>
     public sealed class LmStudioClientFactory : ILlmClientFactory
     {
-        private readonly IConfiguration _config;
+        private readonly LmStudioSettings _settings;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="LmStudioClientFactory"/> class.
         /// </summary>
-        /// <param name="configuration">Application configuration root.</param>
-        public LmStudioClientFactory(IConfiguration configuration)
+        /// <param name="appSettings">Application settings containing LLM configuration.</param>
+        public LmStudioClientFactory(IOptions<AppSettings> appSettings)
         {
-            _config = configuration.GetSection("LLM:LMStudio");
+            _settings = appSettings.Value.LLM.LMStudio;
         }
 
         /// <inheritdoc />
         public IChatClient CreateChatClient()
         {
-            var endpoint = _config["Endpoint"] ?? "http://localhost:1234/v1";
-            var apiKey = _config["ApiKey"] ?? "lm-studio";
-            var model = _config["Model"] ?? "openai/gpt-oss-20b";
+            var endpoint = _settings.Endpoint?.Trim();
+            if (string.IsNullOrEmpty(endpoint))
+            {
+                throw new InvalidOperationException("LMStudio endpoint not configured");
+            }
+
+            var apiKey = _settings.ApiKey?.Trim();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                throw new InvalidOperationException("LMStudio API key not configured");
+            }
+
+            var model = _settings.Model?.Trim();
+            if (string.IsNullOrEmpty(model))
+            {
+                throw new InvalidOperationException("LMStudio model not configured");
+            }
 
             var openAIClient = new OpenAIClient(
                 new ApiKeyCredential(apiKey),
-                new OpenAIClientOptions { Endpoint = new Uri(endpoint.Trim()) }
+                new OpenAIClientOptions { Endpoint = new Uri(endpoint) }
             );
 
             return openAIClient.GetChatClient(model).AsIChatClient();
         }
 
         /// <inheritdoc />
-        public string GetModelName() => _config["Model"] ?? "unknown";
+    public string GetModelName() => _settings.Model?.Trim() ?? string.Empty;
     }
 }

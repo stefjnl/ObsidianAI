@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
+using ObsidianAI.Application.Services;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,34 +11,62 @@ namespace ObsidianAI.Api.Services
     /// <summary>
     /// Service to handle async initialization of McpClient
     /// </summary>
-    public class McpClientService : IHostedService
+    public class McpClientService : IHostedService, IMcpClientProvider
     {
-        private readonly Lazy<Task<McpClient>> _lazyClient;
+        private readonly SemaphoreSlim _initLock = new(1, 1);
         private McpClient? _client;
-        // No need for _isInitialized field since we rely on the lazy initialization
+        private readonly ILogger<McpClientService> _logger;
+        private bool _initialized;
 
-        public McpClientService()
+        public McpClientService(ILogger<McpClientService> logger)
         {
-            _lazyClient = new Lazy<Task<McpClient>>(CreateClientAsync);
+            _logger = logger;
         }
 
-        public McpClient Client
+        public async Task<McpClient?> GetClientAsync(CancellationToken cancellationToken = default)
         {
-            get
+            if (_initialized)
             {
-                if (_client == null)
-                {
-                    // Wait for the client to be created (only happens once)
-                    _client = _lazyClient.Value.GetAwaiter().GetResult();
-                }
                 return _client;
+            }
+
+            await _initLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_initialized)
+                {
+                    return _client;
+                }
+
+                _client = await CreateClientAsync(cancellationToken).ConfigureAwait(false);
+                _initialized = true;
+                return _client;
+            }
+            finally
+            {
+                _initLock.Release();
             }
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            // Initialize the client during startup
-            _client = await _lazyClient.Value;
+            try
+            {
+                var client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+                if (client != null)
+                {
+                    _logger.LogInformation("MCP client initialized successfully");
+                }
+                else
+                {
+                    _logger.LogWarning("MCP client initialization failed - continuing without MCP functionality");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to initialize MCP client - continuing without MCP functionality");
+                _client = null;
+            }
         }
 
         public Task StopAsync(CancellationToken cancellationToken)
@@ -45,14 +75,32 @@ namespace ObsidianAI.Api.Services
             return Task.CompletedTask;
         }
 
-        private async Task<McpClient> CreateClientAsync()
+        private async Task<McpClient?> CreateClientAsync(CancellationToken cancellationToken)
         {
-            var options = new HttpClientTransportOptions
+            try
             {
-                Endpoint = new Uri("http://localhost:8033/mcp")
-            };
-            var transport = new HttpClientTransport(options);
-            return await McpClient.CreateAsync(transport);
+                var mcpEndpoint = Environment.GetEnvironmentVariable("MCP_ENDPOINT");
+                if (string.IsNullOrEmpty(mcpEndpoint))
+                {
+                    _logger.LogWarning("MCP_ENDPOINT environment variable not set. MCP functionality will be disabled.");
+                    return null;
+                }
+
+                var options = new HttpClientTransportOptions
+                {
+                    Endpoint = new Uri(mcpEndpoint)
+                };
+                var transport = new HttpClientTransport(options);
+                var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken).ConfigureAwait(false);
+                _logger.LogInformation("Successfully connected to MCP server at {McpEndpoint}", mcpEndpoint);
+                return client;
+            }
+            catch (Exception ex)
+            {
+                var mcpEndpoint = Environment.GetEnvironmentVariable("MCP_ENDPOINT");
+                _logger.LogWarning(ex, "Failed to connect to MCP server at {McpEndpoint}. MCP functionality will be disabled.", mcpEndpoint);
+                return null;
+            }
         }
     }
 }

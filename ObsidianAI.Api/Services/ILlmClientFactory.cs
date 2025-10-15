@@ -1,22 +1,4 @@
-using Microsoft.Extensions.AI;
-
-namespace ObsidianAI.Api.Services
-{
-    /// <summary>
-    /// Factory abstraction for creating AI chat clients based on configured LLM provider.
-    /// </summary>
-    public interface ILlmClientFactory
-    {
-        /// <summary>
-        /// Create an IChatClient for the configured provider and model.
-        /// </summary>
-        /// <returns>An IChatClient instance configured for the current LLM provider.</returns>
-        IChatClient CreateChatClient();
-
-        /// <summary>
-        /// Gets the configured model identifier to be used by the chat client.
-        /// </summary>
-        /// <returns>The model name as configured in appsettings.</returns>
-        string GetModelName();
-    }
-}
+// Legacy namespace shim retained for backward compatibility. Use ObsidianAI.Infrastructure.LLM.ILlmClientFactory instead.
+#pragma warning disable CS0436
+global using ILlmClientFactory = ObsidianAI.Infrastructure.LLM.ILlmClientFactory;
+#pragma warning restore CS0436
