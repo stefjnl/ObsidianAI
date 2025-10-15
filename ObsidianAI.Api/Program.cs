@@ -3,6 +3,7 @@ using ObsidianAI.Api.Models;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using ObsidianAI.Api.Services;
 using System;
 
@@ -11,14 +12,17 @@ var builder = WebApplication.CreateBuilder(args);
 // Add service defaults (health checks, telemetry)
 builder.AddServiceDefaults();
 
+// Configure strongly-typed AppSettings
+builder.Services.Configure<AppSettings>(builder.Configuration);
+
 // Register ILlmClientFactory singleton based on LLM:Provider configuration
 builder.Services.AddSingleton<ILlmClientFactory>(sp =>
 {
-    var configuration = sp.GetRequiredService<IConfiguration>();
-    var provider = configuration["LLM:Provider"]?.Trim() ?? "LMStudio";
+    var appSettings = sp.GetRequiredService<IOptions<AppSettings>>();
+    var provider = appSettings.Value.LLM.Provider?.Trim() ?? "LMStudio";
     return provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase)
-        ? new OpenRouterClientFactory(configuration)
-        : new LmStudioClientFactory(configuration);
+        ? new OpenRouterClientFactory(appSettings)
+        : new LmStudioClientFactory(appSettings);
 });
 
 // Register MCP client as singleton using async factory pattern
@@ -81,15 +85,16 @@ CRITICAL:
 var app = builder.Build();
 // Startup log for configured LLM provider and model
 var llmFactory = app.Services.GetRequiredService<ILlmClientFactory>();
-var providerName = app.Configuration["LLM:Provider"]?.Trim() ?? "LMStudio";
+var appSettings = app.Services.GetRequiredService<IOptions<AppSettings>>();
+var providerName = appSettings.Value.LLM.Provider?.Trim() ?? "LMStudio";
 var modelName = llmFactory.GetModelName();
 app.Logger.LogInformation("Using LLM provider: {Provider}, Model: {Model}", providerName, modelName);
 app.MapDefaultEndpoints();
 
 // Expose current LLM provider to frontend
-app.MapGet("/api/llm/provider", (IConfiguration config) =>
+app.MapGet("/api/llm/provider", (IOptions<AppSettings> appSettings) =>
 {
-    var provider = config["LLM:Provider"]?.Trim() ?? "LMStudio";
+    var provider = appSettings.Value.LLM.Provider?.Trim() ?? "LMStudio";
     return Results.Ok(new { provider });
 });
 

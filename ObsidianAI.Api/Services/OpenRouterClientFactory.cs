@@ -2,8 +2,10 @@ using Microsoft.Agents.AI;
 using System;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using OpenAI;
 using System.ClientModel;
+using ObsidianAI.Api.Models;
 
 namespace ObsidianAI.Api.Services
 {
@@ -13,23 +15,23 @@ namespace ObsidianAI.Api.Services
     /// </summary>
     public sealed class OpenRouterClientFactory : ILlmClientFactory
     {
-        private readonly IConfiguration _config;
+        private readonly OpenRouterSettings _settings;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="OpenRouterClientFactory"/> class.
         /// </summary>
-        /// <param name="configuration">Application configuration root.</param>
-        public OpenRouterClientFactory(IConfiguration configuration)
+        /// <param name="appSettings">Application settings containing LLM configuration.</param>
+        public OpenRouterClientFactory(IOptions<AppSettings> appSettings)
         {
-            _config = configuration.GetSection("LLM:OpenRouter");
+            _settings = appSettings.Value.LLM.OpenRouter;
         }
 
         /// <inheritdoc />
         public IChatClient CreateChatClient()
         {
-            var endpoint = _config["Endpoint"] ?? "https://openrouter.ai/api/v1";
-            var apiKey = _config["ApiKey"] ?? throw new InvalidOperationException("OpenRouter API key missing");
-            var model = _config["Model"] ?? "google/gemini-2.5-flash-lite-preview-09-2025";
+            var endpoint = _settings.Endpoint ?? "https://openrouter.ai/api/v1";
+            var apiKey = _settings.ApiKey ?? throw new InvalidOperationException("OpenRouter API key missing");
+            var model = _settings.Model ?? "google/gemini-2.5-flash-lite-preview-09-2025";
 
             var openAIClient = new OpenAIClient(
                 new ApiKeyCredential(apiKey),
@@ -40,6 +42,6 @@ namespace ObsidianAI.Api.Services
         }
 
         /// <inheritdoc />
-        public string GetModelName() => _config["Model"] ?? "unknown";
+        public string GetModelName() => _settings.Model ?? "unknown";
     }
 }
