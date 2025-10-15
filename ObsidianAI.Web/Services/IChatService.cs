@@ -60,6 +60,13 @@ public interface IChatService
     /// Gets the current LLM provider name from the backend.
     /// </summary>
     Task<string> GetLlmProviderAsync();
+
+    /// <summary>
+    /// Performs a single-file modify operation (append/modify/delete/create) on the vault.
+    /// </summary>
+    /// <param name="request">The modify request details.</param>
+    /// <returns>The result of the modify operation.</returns>
+    Task<ModifyResponse> ModifyAsync(ModifyRequest request);
 }
 
 /// <summary>

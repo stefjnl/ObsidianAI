@@ -70,6 +70,16 @@ namespace ObsidianAI.Web.Models
         /// Destination file/path (if applicable)
         /// </summary>
         public string Destination { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Content payload associated with the action (e.g., text to append or patch)
+        /// </summary>
+        public string Content { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Operation string (append, modify, delete, create) used for API routing
+        /// </summary>
+        public string Operation { get; init; } = string.Empty;
         
         /// <summary>
         /// Type of action

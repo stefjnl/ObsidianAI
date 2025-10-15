@@ -15,3 +15,7 @@ public record ReorganizeRequest(string Strategy);
 public record ReorganizeResponse(string Status, int FilesAffected);
 
 public record FileOperationData(string Action, string FilePath);
+
+public record ModifyRequest(string Operation, string FilePath, string Content, string ConfirmationId);
+
+public record ModifyResponse(bool Success, string Message, string FilePath);

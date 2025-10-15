@@ -188,4 +188,73 @@ app.MapPost("/vault/reorganize", (ReorganizeRequest request) =>
     return Results.Ok(new ReorganizeResponse("Completed", 10));
 });
 
+app.MapPost("/vault/modify", async (ModifyRequest request, McpClient mcpClient, ILogger<Program> logger) =>
+{
+    try
+    {
+        logger.LogInformation("Executing modify operation: {Operation} on {FilePath}", request.Operation, request.FilePath);
+
+        // Normalize operation name
+        var op = request.Operation.ToLowerInvariant() switch
+        {
+            "append" => "obsidian_append_content",
+            "modify" or "patch" or "write" => "obsidian_patch_content",
+            "delete" => "obsidian_delete_file",
+            "create" => "obsidian_create_file",
+            _ => throw new ArgumentException($"Unsupported operation: {request.Operation}")
+        };
+
+        // Prepare tool arguments as IReadOnlyDictionary<string, object?>
+        IReadOnlyDictionary<string, object?> arguments = op switch
+        {
+            "obsidian_append_content" => new Dictionary<string, object?>
+            {
+                ["filepath"] = request.FilePath,
+                ["content"] = request.Content
+            },
+            "obsidian_patch_content" => new Dictionary<string, object?>
+            {
+                ["filepath"] = request.FilePath,
+                ["content"] = request.Content,
+                ["operation"] = "append" // Default patch operation; can be refined later
+            },
+            "obsidian_delete_file" => new Dictionary<string, object?>
+            {
+                ["filepath"] = request.FilePath
+            },
+            "obsidian_create_file" => new Dictionary<string, object?>
+            {
+                ["filepath"] = request.FilePath,
+                ["content"] = request.Content
+            },
+            _ => throw new InvalidOperationException($"Unexpected tool name: {op}")
+        };
+
+        // Call the MCP tool
+        var result = await mcpClient.CallToolAsync(op, arguments);
+
+        string responseMessage = "Operation failed: No response from tool.";
+        bool isSuccess = !(result.IsError ?? true);
+
+        if (result.Content?.FirstOrDefault() is ModelContextProtocol.Protocol.TextContentBlock textBlock)
+        {
+            responseMessage = textBlock.Text;
+        }
+
+        if (!isSuccess)
+        {
+            logger.LogError("MCP tool {ToolName} returned error: {Error}", op, responseMessage);
+            return Results.Ok(new ModifyResponse(false, $"MCP tool error: {responseMessage}", request.FilePath));
+        }
+
+        logger.LogInformation("MCP tool {ToolName} completed successfully: {Message}", op, responseMessage);
+        return Results.Ok(new ModifyResponse(true, responseMessage, request.FilePath));
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error executing modify operation: {Operation} on {FilePath}", request.Operation, request.FilePath);
+        return Results.Ok(new ModifyResponse(false, ex.Message, request.FilePath));
+    }
+});
+
 app.Run();

@@ -292,6 +292,44 @@ public class ChatService : IChatService
             _ => "📎"
         };
     }
+
+    /// <summary>
+    /// Performs a single-file modify operation (append/modify/delete/create) on the vault.
+    /// </summary>
+    /// <param name="request">The modify request details.</param>
+    /// <returns>The result of the modify operation.</returns>
+    public async Task<ModifyResponse> ModifyAsync(ModifyRequest request)
+    {
+        try
+        {
+            _logger.LogInformation("Performing modify operation: {Operation} on {FilePath}", request.Operation, request.FilePath);
+
+            var apiRequest = new
+            {
+                operation = request.Operation,
+                filePath = request.FilePath,
+                content = request.Content,
+                confirmationId = request.ConfirmationId
+            };
+
+            var response = await _httpClient.PostAsJsonAsync("/vault/modify", apiRequest);
+            response.EnsureSuccessStatusCode();
+
+            var apiResponse = await response.Content.ReadFromJsonAsync<ModifyApiResponse>();
+
+            return new ModifyResponse
+            {
+                Success = apiResponse?.Success ?? false,
+                Message = apiResponse?.Message ?? string.Empty,
+                FilePath = apiResponse?.FilePath ?? request.FilePath
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error performing modify operation");
+            throw;
+        }
+    }
 }
 
 // Internal API response models for deserialization
@@ -345,4 +383,11 @@ internal record ChatApiResponse
 {
     public string? Text { get; init; }
     public FileOperationData? FileOperationResult { get; init; }
+}
+
+internal record ModifyApiResponse
+{
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public string FilePath { get; init; } = string.Empty;
 }

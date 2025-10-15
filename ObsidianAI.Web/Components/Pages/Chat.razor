@@ -293,27 +293,52 @@
     {
         // Find the message with this action card
         var message = conversationHistory.FirstOrDefault(m => m.ActionCard?.Id == actionId);
-        if (message != null && message.ActionCard != null)
+        if (message == null || message.ActionCard == null) return;
+
+        // Update the action card status to Processing
+        message = message with
         {
-            // Update the action card status
-            message = message with
+            ActionCard = message.ActionCard with
             {
-                ActionCard = message.ActionCard with
+                Status = ActionCardStatus.Processing
+            }
+        };
+
+        // Update in the list
+        var index = conversationHistory.IndexOf(conversationHistory.First(m => m.ActionCard?.Id == actionId));
+        conversationHistory[index] = message;
+        StateHasChanged();
+
+        try
+        {
+            // Route single-file actions to Modify; multi-file to Reorganize
+            if (message.ActionCard.Actions.Count == 1)
+            {
+                var action = message.ActionCard.Actions[0];
+                var modifyRequest = new ModifyRequest
                 {
-                    Status = ActionCardStatus.Processing
-                }
-            };
+                    Operation = action.Operation,
+                    FilePath = action.Source,
+                    Content = action.Content,
+                    ConfirmationId = actionId
+                };
 
-            // Update in the list
-            var index = conversationHistory.IndexOf(conversationHistory.First(m => m.ActionCard?.Id == actionId));
-            conversationHistory[index] = message;
+                var response = await ChatService.ModifyAsync(modifyRequest);
 
-            StateHasChanged();
-
-            // Execute the action via the chat service
-            try
+                // Update the action card with the result
+                message = message with
+                {
+                    ActionCard = message.ActionCard with
+                    {
+                        Status = response.Success ? ActionCardStatus.Completed : ActionCardStatus.Failed,
+                        StatusMessage = response.Message
+                    }
+                };
+            }
+            else
             {
-                var request = new ReorganizeRequest
+                // Multi-action: use existing Reorganize flow
+                var reorganizeRequest = new ReorganizeRequest
                 {
                     Operation = message.ActionCard.OperationType.ToString(),
                     FileOperations = message.ActionCard.Actions.Select(a => new FileOperation
@@ -325,9 +350,8 @@
                     ConfirmationId = actionId
                 };
 
-                var response = await ChatService.ReorganizeAsync(request);
+                var response = await ChatService.ReorganizeAsync(reorganizeRequest);
 
-                // Update the action card with the result
                 message = message with
                 {
                     ActionCard = message.ActionCard with
@@ -336,25 +360,25 @@
                         StatusMessage = response.Message
                     }
                 };
-
-                conversationHistory[index] = message;
-            }
-            catch (Exception ex)
-            {
-                message = message with
-                {
-                    ActionCard = message.ActionCard! with
-                    {
-                        Status = ActionCardStatus.Failed,
-                        StatusMessage = $"Failed to execute actions: {ex.Message}"
-                    }
-                };
-
-                conversationHistory[index] = message;
             }
 
-            StateHasChanged();
+            conversationHistory[index] = message;
         }
+        catch (Exception ex)
+        {
+            message = message with
+            {
+                ActionCard = message.ActionCard! with
+                {
+                    Status = ActionCardStatus.Failed,
+                    StatusMessage = $"Failed to execute actions: {ex.Message}"
+                }
+            };
+
+            conversationHistory[index] = message;
+        }
+
+        StateHasChanged();
     }
 
     private Task HandleActionCancelled(string actionId)
@@ -464,6 +488,8 @@ private Task ParseResponseForComponents(string response)
                         },
                         Source = filePath,
                         Destination = filePath,
+                        Content = content,
+                        Operation = operation.ToLowerInvariant(),
                         Description = $"{char.ToUpper(operation[0])}{operation.Substring(1).ToLower()} \"{content}\" → {filePath}"
                     }
                 },
