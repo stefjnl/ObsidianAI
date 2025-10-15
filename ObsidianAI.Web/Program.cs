@@ -15,20 +15,24 @@ builder.Services.AddSignalR();
 // Register dedicated HttpClient for ChatHub with API base address and extended timeout for streaming
 builder.Services.AddHttpClient<ChatHub>(client =>
 {
-    client.BaseAddress = new Uri("http://localhost:5095");
+    // Use Aspire service discovery if available, otherwise use direct port
+    var apiEndpoint = builder.Configuration.GetConnectionString("api")
+                      ?? "http://localhost:5095";
+
+    client.BaseAddress = new Uri(apiEndpoint);
     client.Timeout = TimeSpan.FromMinutes(5);
 });
 
-// Register ChatService
+// Register ChatService with proper API endpoint configuration
 builder.Services.AddHttpClient<IChatService, ChatService>(client =>
 {
-    // The base address will be configured by Aspire service discovery
-    // This is a fallback for development when not running through Aspire
-    client.BaseAddress = new Uri(builder.Configuration["ServiceEndpoints:Api"] ?? "https://localhost:7001");
-});
+    // Use Aspire service discovery if available, otherwise use direct port
+    var apiEndpoint = builder.Configuration.GetConnectionString("api")
+                      ?? "http://localhost:5095";
 
-// Register ChatService as scoped
-builder.Services.AddScoped<IChatService, ChatService>();
+    client.BaseAddress = new Uri(apiEndpoint);
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
 
 var app = builder.Build();
 
@@ -36,16 +40,12 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
 app.UseHttpsRedirection();
-
 app.UseStaticFiles();
-
 app.UseAntiforgery();
-
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

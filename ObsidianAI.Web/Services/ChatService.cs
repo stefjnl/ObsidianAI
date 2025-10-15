@@ -14,15 +14,10 @@ public class ChatService : IChatService
     private readonly IConfiguration _configuration;
     private readonly ILogger<ChatService> _logger;
     
-    public ChatService(HttpClient httpClient, IConfiguration configuration, ILogger<ChatService> logger)
+    public ChatService(HttpClient httpClient, ILogger<ChatService> logger)
     {
         _httpClient = httpClient;
-        _configuration = configuration;
         _logger = logger;
-        
-        // Configure the base address from Aspire service reference
-        var apiBaseUrl = configuration["ServiceEndpoints:Api"] ?? "https://localhost:7001";
-        _httpClient.BaseAddress = new Uri(apiBaseUrl);
     }
     
     /// <summary>
@@ -54,29 +49,42 @@ public class ChatService : IChatService
     /// <summary>
     /// Sends a message and gets a structured ChatMessage response for testing UI components.
     /// </summary>
-    public Task<ChatMessage> SendMessageAndGetResponseAsync(string message)
+    public async Task<ChatMessage> SendMessageAndGetResponseAsync(string message)
     {
-        _logger.LogInformation("Simulating a direct response for message: {Message}", message);
-
-        // Simulate a file operation result for testing purposes.
-        var fileOpResult = new FileOperationResultData
+        try
         {
-            Success = true,
-            Operation = "File Modified",
-            FilePath = "Work/Project-Alpha/Meeting-Notes.md",
-            Message = "Appended content to file."
-        };
-
-        var responseMessage = new ChatMessage
+            _logger.LogInformation("Sending message to API: {Message}", message);
+            
+            var response = await _httpClient.PostAsJsonAsync("/chat", new { message });
+            response.EnsureSuccessStatusCode();
+            
+            var apiResponse = await response.Content.ReadFromJsonAsync<ChatApiResponse>();
+            
+            var chatMessage = new ChatMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Content = apiResponse?.Text ?? "No response text received",
+                Sender = MessageSender.AI,
+                Timestamp = DateTime.UtcNow,
+                FileOperation = apiResponse?.FileOperationResult
+            };
+            
+            _logger.LogInformation("Received structured response from API");
+            return chatMessage;
+        }
+        catch (Exception ex)
         {
-            Id = Guid.NewGuid().ToString(),
-            Content = "Here is the result of the file operation.",
-            Sender = MessageSender.AI,
-            Timestamp = DateTime.UtcNow,
-            FileOperationResult = fileOpResult
-        };
-
-        return Task.FromResult(responseMessage);
+            _logger.LogError(ex, "Error sending message to API");
+            
+            // Return a user-friendly error message
+            return new ChatMessage
+            {
+                Id = Guid.NewGuid().ToString(),
+                Content = "Sorry, I encountered an error processing your request. Please try again.",
+                Sender = MessageSender.AI,
+                Timestamp = DateTime.UtcNow
+            };
+        }
     }
     
     /// <summary>
@@ -332,4 +340,11 @@ internal record CreateNoteApiResponse
 internal record LlmProviderResponse
 {
     public string Provider { get; init; } = string.Empty;
+}
+
+// Record to model the expected JSON structure from the API
+internal record ChatApiResponse
+{
+    public string? Text { get; init; }
+    public FileOperationData? FileOperationResult { get; init; }
 }

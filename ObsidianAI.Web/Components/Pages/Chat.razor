@@ -4,6 +4,7 @@
 @using ObsidianAI.Web.Services
 @using ObsidianAI.Web.Components.Shared
 @using Microsoft.AspNetCore.SignalR.Client
+@using System.Text.RegularExpressions
 @inject IChatService ChatService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
@@ -32,17 +33,10 @@
     {
         @foreach (var message in conversationHistory)
         {
-            if (message.FileOperationResult != null)
-            {
-                <div class="message-bubble-wrapper ai">
-                    <FileOperationResult Result="message.FileOperationResult" />
-                </div>
-            }
-            else
-            {
-                <MessageBubble Message="@message" OnActionConfirmed="HandleActionConfirmed"
-                    OnActionCancelled="HandleActionCancelled" OnActionEdit="HandleActionEdit" />
-            }
+            <MessageBubble Message="@message"
+                          OnActionConfirmed="HandleActionConfirmed"
+                          OnActionCancelled="HandleActionCancelled"
+                          OnActionEdit="HandleActionEdit" />
         }
     }
     else
@@ -126,7 +120,14 @@
                     };
                 // Replace in list
                     conversationHistory[index] = currentAiMessage;
-                    StateHasChanged();
+                    try
+                    {
+                        StateHasChanged();
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Component may have been disposed, ignore
+                    }
                 }
             }
         });
@@ -144,7 +145,14 @@
                 currentAiMessage = currentAiMessage with { IsProcessing = false };
                 currentAiMessage = null;
                 isProcessing = false;
-                StateHasChanged();
+                try
+                {
+                    StateHasChanged();
+                }
+                catch (InvalidOperationException)
+                {
+                    // Component may have been disposed, ignore
+                }
                 await ScrollToBottom();
             }
         });
@@ -164,7 +172,14 @@
                 };
                 currentAiMessage = null;
                 isProcessing = false;
-                StateHasChanged();
+                try
+                {
+                    StateHasChanged();
+                }
+                catch (InvalidOperationException)
+                {
+                    // Component may have been disposed, ignore
+                }
             }
         });
         });
@@ -229,7 +244,21 @@
 
             isProcessing = false;
             currentAiMessage = null;
-            StateHasChanged();
+            try
+            {
+                try
+                {
+                    StateHasChanged();
+                }
+                catch (InvalidOperationException)
+                {
+                    // Component may have been disposed, ignore
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // Component may have been disposed, ignore
+            }
             await ScrollToBottom();
         }
         catch (Exception ex)
@@ -377,217 +406,101 @@
         await ScrollToBottom();
     }
 
-    private Task ParseResponseForComponents(string response)
+    private async Task ParseResponseForComponents(string response)
     {
-        // Expanded parsing logic to detect a broader range of file operations and confirmation prompts
-        var actions = new List<PlannedAction>();
-        var lines = response.Split('\n');
+        // Use regex to detect file operations in the response
+        var regex = new Regex(@"(?i)(created|appended to|modified|patched|wrote to) file:?\s*""?'?([^\s""'?.]+)""?'?", RegexOptions.IgnoreCase);
+        var match = regex.Match(response);
 
-        // Detect phrases indicating a confirmation request
-        bool asksForConfirmation =
-            response.Contains("confirm", StringComparison.OrdinalIgnoreCase) ||
-            response.Contains("confirmation", StringComparison.OrdinalIgnoreCase) ||
-            response.Contains("are you sure", StringComparison.OrdinalIgnoreCase) ||
-            response.Contains("proceed", StringComparison.OrdinalIgnoreCase);
-
-        foreach (var line in lines)
+        if (match.Success)
         {
-            var lower = line.ToLowerInvariant();
-            var paths = ExtractFilePaths(line);
-
-            // Move operations (existing support)
-            if (lower.Contains("move") || line.Contains("→"))
+            var action = match.Groups[1].Value.Trim();
+            var filePath = match.Groups[2].Value.Trim();
+            
+            var fileOperationData = new FileOperationData
             {
-                actions.Add(new PlannedAction
-                {
-                    Icon = "📄",
-                    Description = line.Trim(),
-                    Type = ActionType.Move,
-                    Source = ExtractSourcePath(line),
-                    Destination = ExtractDestinationPath(line)
-                });
-                continue;
-            }
-
-            // Create operations: "create <file>"
-            if (lower.Contains("create") && paths.Any())
-            {
-                foreach (var p in paths)
-                {
-                    actions.Add(new PlannedAction
-                    {
-                        Icon = "🆕",
-                        Description = line.Trim(),
-                        Type = ActionType.Create,
-                        Source = p
-                    });
-                }
-                continue;
-            }
-
-            // Append operations: "append <file>"
-            if (lower.Contains("append") && paths.Any())
-            {
-                foreach (var p in paths)
-                {
-                    actions.Add(new PlannedAction
-                    {
-                        Icon = "➕",
-                        Description = line.Trim(),
-                        Type = ActionType.Other,
-                        Source = p
-                    });
-                }
-                continue;
-            }
-
-            // Write operations: "write <file>"
-            if (lower.Contains("write") && paths.Any())
-            {
-                foreach (var p in paths)
-                {
-                    actions.Add(new PlannedAction
-                    {
-                        Icon = "✍️",
-                        Description = line.Trim(),
-                        Type = ActionType.Other,
-                        Source = p
-                    });
-                }
-                continue;
-            }
-
-            // Generic confirmation with file paths (no specific verb detected)
-            if (asksForConfirmation && paths.Any())
-            {
-                foreach (var p in paths)
-                {
-                    actions.Add(new PlannedAction
-                    {
-                        Icon = "📄",
-                        Description = $"Confirm operation for {p}",
-                        Type = ActionType.Other,
-                        Source = p
-                    });
-                }
-            }
-        }
-
-        // If actions were detected, construct an ActionCard
-        if (actions.Any())
-        {
-            // Deduce a primary operation type for the card
-            ActionOperationType opType;
-            if (actions.All(a => a.Type == ActionType.Move))
-                opType = ActionOperationType.Move;
-            else if (actions.All(a => a.Type == ActionType.Create))
-                opType = ActionOperationType.Create;
-            else
-                opType = ActionOperationType.Other;
-
-            var actionCard = new ActionCardData
-            {
-                Title = "Planned File Operations",
-                Actions = actions,
-                HasMoreActions = actions.Count > 3,
-                HiddenActionCount = Math.Max(0, actions.Count - 3),
-                Status = ActionCardStatus.Pending,
-                OperationType = opType
+                Action = char.ToUpper(action[0]) + action.Substring(1), // Capitalize first letter
+                FilePath = filePath
             };
 
-            // Update the current AI message with the action card
             if (currentAiMessage != null)
             {
-                var index = conversationHistory.IndexOf(currentAiMessage);
-                currentAiMessage = currentAiMessage with { ActionCard = actionCard, ProcessingType = ProcessingType.None };
-                conversationHistory[index] = currentAiMessage;
-            }
-        }
-        else if (response.Contains("found", StringComparison.OrdinalIgnoreCase) ||
-                 response.Contains("search", StringComparison.OrdinalIgnoreCase))
-        {
-            // Extract search results (simplified parsing)
-            var searchResults = new List<SearchResultData>();
-            var lines2 = response.Split('\n');
-
-            foreach (var line in lines2)
-            {
-                if (line.Contains(".md") || line.Contains(".txt"))
+                var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                if (index >= 0)
                 {
-                    // Very basic parsing - in a real implementation, this would be more sophisticated
-                    var parts = line.Split(':');
-                    if (parts.Length >= 2)
-                    {
-                        searchResults.Add(new SearchResultData
-                        {
-                            Title = parts[0].Trim(),
-                            FilePath = parts[0].Trim(),
-                            Preview = parts.Length > 2 ? parts[2].Trim() : line.Trim(),
-                            Icon = "📝",
-                            FileExtension = ".md"
-                        });
-                    }
-                }
-            }
-
-            if (searchResults.Any())
-            {
-                // Update the current AI message with search results
-                if (currentAiMessage != null)
-                {
-                    var index = conversationHistory.IndexOf(currentAiMessage);
                     currentAiMessage = currentAiMessage with
                     {
-                        SearchResults = searchResults,
+                        FileOperation = fileOperationData,
                         ProcessingType = ProcessingType.None
                     };
                     conversationHistory[index] = currentAiMessage;
                 }
             }
         }
-        return Task.CompletedTask;
+        // If no match is found, FileOperation remains null (default)
     }
 
-    private string ExtractSourcePath(string line)
+    private static bool ContainsConfirmationKeywords(string text)
     {
-        // Simple extraction logic - would be more sophisticated in a real implementation
-        var match = System.Text.RegularExpressions.Regex.Match(line, @"(\S+\.\w+)");
-        return match.Success ? match.Value : string.Empty;
+        var lower = text.ToLowerInvariant();
+        return lower.Contains("confirm") ||
+               lower.Contains("confirmation") ||
+               lower.Contains("proceed") ||
+               lower.Contains("are you sure") ||
+               lower.Contains("please verify") ||
+               lower.Contains("i will perform") ||
+               lower.Contains("planned operations");
     }
 
-    private string ExtractDestinationPath(string line)
+    private static ActionOperationType DetermineOperationType(List<PlannedAction> actions)
     {
-        // Simple extraction logic - would be more sophisticated in a real implementation
-        var match = System.Text.RegularExpressions.Regex.Match(line, @"→\s*(\S+)");
-        return match.Success ? match.Groups[1].Value : string.Empty;
+        if (actions.All(a => a.Type == ActionType.Move))
+            return ActionOperationType.Move;
+        if (actions.All(a => a.Type == ActionType.Delete))
+            return ActionOperationType.Delete;
+        if (actions.All(a => a.Type == ActionType.Create))
+            return ActionOperationType.Create;
+        if (actions.Count > 3)
+            return ActionOperationType.Reorganize;
+        return ActionOperationType.Other;
     }
 
-    private List<string> ExtractFilePaths(string text)
+    private static bool ExtractPaths(string text, out List<string> paths)
     {
-        var results = new List<string>();
+        paths = ExtractAllPaths(text);
+        return paths.Count >= 2;
+    }
 
-        // Windows absolute path with drive letter and extension
-        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
-                     text, @"[A-Za-z]:\\[^\s:""]+\.[\w]+"))
+    private static List<string> ExtractAllPaths(string text)
+    {
+        var results = new HashSet<string>();
+
+        // Pattern 1: Quoted paths
+        var quotedMatches = System.Text.RegularExpressions.Regex.Matches(text, @"""([^""]+\.[a-zA-Z0-9]+)""");
+        foreach (System.Text.RegularExpressions.Match m in quotedMatches)
         {
-            results.Add(m.Value);
+            results.Add(m.Groups[1].Value);
         }
 
-        // Relative or absolute paths with slashes/backslashes and an extension
-        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
-                     text, @"(?:^|[\s""'])\.{0,2}[\\/][^\s:""]+\.[\w]+"))
+        // Pattern 2: Backtick paths
+        var backtickMatches = System.Text.RegularExpressions.Regex.Matches(text, @"`([^`]+\.[a-zA-Z0-9]+)`");
+        foreach (System.Text.RegularExpressions.Match m in backtickMatches)
         {
-            results.Add(m.Value.Trim().Trim('"', '\''));
+            results.Add(m.Groups[1].Value);
         }
 
-        // Pure forward slash absolute paths with extension
-        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
-                     text, @"(?:^|[\s""'])(?:/[^:\s""']+\.[\w]+)"))
+        // Pattern 3: Paths with slashes and extensions
+        var slashMatches = System.Text.RegularExpressions.Regex.Matches(text, @"([\w\-./\\]+\.[a-zA-Z0-9]+)");
+        foreach (System.Text.RegularExpressions.Match m in slashMatches)
         {
-            results.Add(m.Value.Trim().Trim('"', '\''));
+            var path = m.Groups[1].Value.Trim();
+            if (!path.StartsWith("http") && !path.StartsWith("www"))
+            {
+                results.Add(path);
+            }
         }
 
-        return results.Distinct().ToList();
+        return results.ToList();
     }
 
     private async Task ScrollToBottom()
