@@ -99,14 +99,29 @@ public class ChatHub : Hub
                     else
                     {
                         var decodedChunk = TextDecoderService.DecodeSurrogatePairs(data);
+                        var fullResponseStr = fullResponse.ToString();
 
                         // Add newline before list items if previous content exists and doesn't end with newline
                         if (fullResponse.Length > 0 &&
-                            !fullResponse.ToString().EndsWith("\n") &&
+                            !fullResponseStr.EndsWith("\n") &&
                             decodedChunk.TrimStart().StartsWith("*"))
                         {
                             fullResponse.Append("\n\n");
                             await Clients.Caller.SendAsync("ReceiveToken", "\n\n");
+                        }
+                        // Add newline after list when transitioning to regular text
+                        // Only trigger if we already have a newline (list item ended) and new content isn't a list item
+                        else if (fullResponse.Length > 0 &&
+                                 fullResponseStr.EndsWith("\n") &&
+                                 !fullResponseStr.EndsWith("\n\n") &&
+                                 !decodedChunk.TrimStart().StartsWith("*"))
+                        {
+                            var lastLine = fullResponseStr.Split('\n').Reverse().Skip(1).FirstOrDefault()?.TrimStart() ?? "";
+                            if (lastLine.StartsWith("*"))
+                            {
+                                fullResponse.Append("\n");
+                                await Clients.Caller.SendAsync("ReceiveToken", "\n");
+                            }
                         }
 
                         fullResponse.Append(decodedChunk);
@@ -117,14 +132,29 @@ public class ChatHub : Hub
                 else if (!string.IsNullOrWhiteSpace(line))
                 {
                     var decodedChunk = TextDecoderService.DecodeSurrogatePairs(line);
+                    var fullResponseStr = fullResponse.ToString();
 
                     // Add newline before list items if previous content exists
                     if (fullResponse.Length > 0 &&
-                        !fullResponse.ToString().EndsWith("\n") &&
+                        !fullResponseStr.EndsWith("\n") &&
                         decodedChunk.TrimStart().StartsWith("*"))
                     {
                         fullResponse.Append("\n\n");
                         await Clients.Caller.SendAsync("ReceiveToken", "\n\n");
+                    }
+                    // Add newline after list when transitioning to regular text
+                    // Only trigger if we already have a newline (list item ended) and new content isn't a list item
+                    else if (fullResponse.Length > 0 &&
+                             fullResponseStr.EndsWith("\n") &&
+                             !fullResponseStr.EndsWith("\n\n") &&
+                             !decodedChunk.TrimStart().StartsWith("*"))
+                    {
+                        var lastLine = fullResponseStr.Split('\n').Reverse().Skip(1).FirstOrDefault()?.TrimStart() ?? "";
+                        if (lastLine.StartsWith("*"))
+                        {
+                            fullResponse.Append("\n");
+                            await Clients.Caller.SendAsync("ReceiveToken", "\n");
+                        }
                     }
 
                     fullResponse.Append(decodedChunk);
