@@ -2,7 +2,7 @@
 @inject IJSRuntime JSRuntime
 
 <div class="markdown-content" @ref="markdownElement">
-    @((MarkupString)HtmlContent)
+    @((MarkupString)_cachedHtml)
 </div>
 
 @code {
@@ -10,27 +10,60 @@
     public string Content { get; set; } = string.Empty;
 
     private ElementReference markdownElement;
-    private string HtmlContent => ConvertMarkdown(Content);
+    private string _cachedHtml = string.Empty;
+    private string _lastContent = string.Empty;
+    private bool _needsHighlight = false;
 
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
-        .UseAdvancedExtensions()
-        .UseSoftlineBreakAsHardlineBreak()
-        .Build();
+    .UseAdvancedExtensions()
+    .UseSoftlineBreakAsHardlineBreak()
+    .Build();
+
+    protected override void OnParametersSet()
+    {
+        // Only re-convert if content actually changed
+        if (_lastContent != Content)
+        {
+            _cachedHtml = ConvertMarkdown(Content);
+            _lastContent = Content;
+            _needsHighlight = true; // Flag for syntax highlighting after render
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Apply syntax highlighting only when content changes or first render
+        if (firstRender || _needsHighlight)
+        {
+            _needsHighlight = false;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("highlightCode", markdownElement);
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit disconnected, ignore
+            }
+            catch (TaskCanceledException)
+            {
+                // Component disposed during async operation, ignore
+            }
+        }
+    }
 
     private static string ConvertMarkdown(string markdown)
     {
         if (string.IsNullOrWhiteSpace(markdown))
             return string.Empty;
 
-        var html = Markdown.ToHtml(markdown, Pipeline);
-        return html;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
+        try
         {
-            await JSRuntime.InvokeVoidAsync("highlightCode", markdownElement);
+            return Markdown.ToHtml(markdown, Pipeline);
+        }
+        catch (Exception)
+        {
+            // Fallback for malformed markdown during streaming
+            return $"<pre>{System.Net.WebUtility.HtmlEncode(markdown)}</pre>";
         }
     }
 }

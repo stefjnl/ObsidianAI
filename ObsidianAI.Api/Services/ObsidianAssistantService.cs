@@ -127,6 +127,18 @@ namespace ObsidianAI.Api.Services
             await foreach (var update in responseStream.WithCancellation(cancellationToken))
             {
                 updateCount++;
+
+                // Log the EXACT content with escaped characters to see newlines
+                if (!string.IsNullOrEmpty(update.Text))
+                {
+                    var escapedText = update.Text
+                        .Replace("\n", "\\n")
+                        .Replace("\r", "\\r")
+                        .Replace("\t", "\\t");
+                    _logger?.LogInformation("Update #{Count}: RAW='{Escaped}' (Length={Length})",
+                        updateCount, escapedText.Length > 100 ? escapedText.Substring(0, 100) + "..." : escapedText, update.Text.Length);
+                }
+
                 _logger?.LogDebug("Received update #{Count}: Text={HasText}, Contents={ContentCount}",
                     updateCount, !string.IsNullOrEmpty(update.Text), update.Contents?.Count ?? 0);
 

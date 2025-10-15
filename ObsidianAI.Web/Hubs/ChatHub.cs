@@ -50,38 +50,44 @@ public class ChatHub : Hub
             string? line;
             string? currentEvent = null;
             bool completionSent = false;
+            int lineCount = 0;
 
             while ((line = await reader.ReadLineAsync()) != null)
             {
-                // Log each line for debugging
-                _logger.LogInformation("SSE Line: '{Line}'", line);
+                lineCount++;
 
-                // Parse SSE format: lines starting with "event:" or "data:"
+                // Log with escaped characters to see actual structure
+                var escapedLine = line.Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+                _logger.LogInformation("Line #{LineNum}: '{EscapedLine}'", lineCount,
+                    escapedLine.Length > 100 ? escapedLine.Substring(0, 100) + "..." : escapedLine);
+
                 if (line.StartsWith("event: "))
                 {
                     currentEvent = line.Substring(7).Trim();
-                    _logger.LogInformation("SSE Event Type: '{EventType}'", currentEvent);
                 }
                 else if (line.StartsWith("data: "))
                 {
                     var data = line.Substring(6);
-                    _logger.LogInformation("SSE Data: '{Data}'", data.Length > 50 ? data.Substring(0, 50) + "..." : data);
 
-                    // Check for completion marker
                     if (data == "[DONE]")
                     {
                         var finalResponse = TextDecoderService.DecodeSurrogatePairs(fullResponse.ToString());
+
+                        // Log final response with escaped characters
+                        var escapedFinal = finalResponse.Replace("\n", "\\n").Replace("\r", "\\r");
+                        _logger.LogWarning("Final accumulated response (Length={Length}): '{EscapedResponse}'",
+                            finalResponse.Length,
+                            escapedFinal.Length > 500 ? escapedFinal.Substring(0, 500) + "..." : escapedFinal);
+
                         await Clients.Caller.SendAsync("MessageComplete", finalResponse);
                         completionSent = true;
-                        _logger.LogInformation("Sent MessageComplete event with [DONE] marker");
                         break;
                     }
 
-                    // Handle different event types
                     if (currentEvent == "tool_call")
                     {
                         await Clients.Caller.SendAsync("StatusUpdate", new { type = "tool_call", tool = data });
-                        currentEvent = null; // Reset event type
+                        currentEvent = null;
                     }
                     else if (currentEvent == "error")
                     {
@@ -92,40 +98,62 @@ public class ChatHub : Hub
                     }
                     else
                     {
-                        // Regular text token
                         var decodedChunk = TextDecoderService.DecodeSurrogatePairs(data);
+
+                        // Add newline before list items if previous content exists and doesn't end with newline
+                        if (fullResponse.Length > 0 &&
+                            !fullResponse.ToString().EndsWith("\n") &&
+                            decodedChunk.TrimStart().StartsWith("*"))
+                        {
+                            fullResponse.Append("\n\n");
+                            await Clients.Caller.SendAsync("ReceiveToken", "\n\n");
+                        }
+
                         fullResponse.Append(decodedChunk);
                         await Clients.Caller.SendAsync("ReceiveToken", decodedChunk);
-                        await Task.Delay(10); // Small delay to prevent UI overload
+                        await Task.Delay(10);
                     }
                 }
                 else if (!string.IsNullOrWhiteSpace(line))
                 {
-                    // Handle lines without 'data:' prefix (LLM fragmentation)
-                    _logger.LogInformation("SSE Line without prefix: '{Line}'", line);
-
                     var decodedChunk = TextDecoderService.DecodeSurrogatePairs(line);
+
+                    // Add newline before list items if previous content exists
+                    if (fullResponse.Length > 0 &&
+                        !fullResponse.ToString().EndsWith("\n") &&
+                        decodedChunk.TrimStart().StartsWith("*"))
+                    {
+                        fullResponse.Append("\n\n");
+                        await Clients.Caller.SendAsync("ReceiveToken", "\n\n");
+                    }
+
                     fullResponse.Append(decodedChunk);
+                    // Don't append extra newline - it breaks multiline content
+                    // fullResponse.Append("\n");
+
                     await Clients.Caller.SendAsync("ReceiveToken", decodedChunk);
                     await Task.Delay(10);
                 }
                 else if (string.IsNullOrWhiteSpace(line))
                 {
-                    // Empty line marks end of SSE message
                     currentEvent = null;
                 }
             }
 
-            // CRITICAL: If we exit the loop without receiving [DONE], send completion anyway
             if (!completionSent && fullResponse.Length > 0)
             {
-                _logger.LogWarning("Stream ended without [DONE] marker. Sending MessageComplete anyway.");
                 var finalResponse = TextDecoderService.DecodeSurrogatePairs(fullResponse.ToString());
+
+                // Log final response with escaped characters
+                var escapedFinal = finalResponse.Replace("\n", "\\n").Replace("\r", "\\r");
+                _logger.LogWarning("Final accumulated response (Length={Length}): '{EscapedResponse}'",
+                    finalResponse.Length,
+                    escapedFinal.Length > 500 ? escapedFinal.Substring(0, 500) + "..." : escapedFinal);
+
                 await Clients.Caller.SendAsync("MessageComplete", finalResponse);
             }
 
-            _logger.LogInformation("Message streaming complete (completionSent: {CompletionSent}, responseLength: {Length})",
-                completionSent, fullResponse.Length);
+            _logger.LogInformation("Message streaming complete (Total lines: {LineCount})", lineCount);
         }
         catch (Exception ex)
         {

@@ -176,8 +176,12 @@ app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, Obs
             // Send incremental text as SSE data line - ALWAYS with data: prefix
             else if (!string.IsNullOrEmpty(update.Content))
             {
-                logger.LogDebug("Sending token #{Count}: '{Content}'", updateCount,
-                    update.Content.Length > 50 ? update.Content.Substring(0, 50) + "..." : update.Content);
+                // Log with escaped characters
+                var escapedContent = update.Content.Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+                logger.LogInformation("Sending token #{Count}: RAW='{Escaped}' (Length={Length})",
+                    updateCount,
+                    escapedContent.Length > 100 ? escapedContent.Substring(0, 100) + "..." : escapedContent,
+                    update.Content.Length);
 
                 // CRITICAL: Always send with data: prefix immediately
                 await context.Response.WriteAsync($"data: {update.Content}\n\n", context.RequestAborted);
