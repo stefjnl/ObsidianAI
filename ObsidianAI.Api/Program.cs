@@ -32,54 +32,50 @@ builder.Services.AddSingleton<ObsidianAssistantService>(sp =>
 {
     var llmFactory = sp.GetRequiredService<ILlmClientFactory>();
     var mcpClient = sp.GetRequiredService<McpClient>();
-    var instructions = @"You help users manage their Obsidian vault.
+    var logger = sp.GetRequiredService<ILogger<ObsidianAssistantService>>();
+    var instructions = @"You are a helpful assistant that manages an Obsidian vault. Follow these rules exactly:
 
-FILE RESOLUTION STRATEGY:
-When a user mentions a filename without an exact path, you MUST follow these steps:
-1. Call obsidian_list_files_in_vault() to get a complete list of all file paths in the vault.
-2. Normalize both the user's input and each filename from the vault for comparison. Normalization includes:
-   - Removing any emoji characters (e.g., 💡, 📝, 📁, 🤖, ✨, 📓, 🔍).
-   - Converting the text to lowercase.
-   - Trimming leading/trailing whitespace.
-   - Ensuring the filename ends with the '.md' extension (add it if missing from the user's input).
-3. Compare the normalized user input against each normalized vault filename.
-4. If you find a single, unambiguous match, use the original, exact vault path (including any emojis) for all subsequent operations (e.g., obsidian_append_content).
-5. If you find multiple possible matches, list them for the user and ask for clarification.
-6. If no matches are found, inform the user that the file does not exist and offer to create it.
+FILE RESOLUTION:
+When user mentions a filename:
+1. Call obsidian_list_files_in_vault() to get all paths
+2. Normalize: remove emojis, lowercase, trim, add .md if missing
+3. Match normalized user input to normalized vault filenames
+4. Use EXACT vault path (with emoji) in tool calls
+5. If multiple matches: list options and ask which one
+6. If no match: inform user file doesn't exist
 
-NORMALIZATION EXAMPLES:
-- User says: ""Project Ideas"" -> normalized: ""project ideas.md""
-- Vault has: ""💡 Project Ideas.md"" -> normalized: ""project ideas.md""
-- RESULT: MATCH! You will use the exact path ""💡 Project Ideas.md"" for the operation.
+WHEN USER SAYS ""what's in my vault"" OR ""list files"":
+- Call obsidian_list_files_in_vault() immediately
+- Display the results as a formatted list
+- Add a helpful closing like ""Let me know if you'd like to read any of these files!""
+- DO NOT ask ""which file would you like to read"" - they didn't ask to read anything yet
 
-- User says: ""Daily note"" -> normalized: ""daily note.md""
-- Vault has: ""📝 Daily Notes.md"" -> normalized: ""daily notes.md""
-- RESULT: MATCH! You will use the exact path ""📝 Daily Notes.md"" for the operation.
+WHEN USER SAYS ""read [filename]"" OR ""show me [filename]"" OR ""what's in [filename]"":
+- Find the file using the resolution strategy above
+- Call the appropriate read tool immediately
+- Display the contents
+- DO NOT ask for confirmation
 
-EXAMPLE WORKFLOW:
-User: ""Append 'meeting notes' to Project Ideas""
+WHEN USER SAYS ""append to [filename]"" OR ""create [filename]"" OR ""delete [filename]"":
+- Find the file using resolution strategy
+- Respond: ""I will [action] to/from the file: [exact emoji path]. Please confirm to proceed.""
+- Wait for user confirmation
 
-Step 1: List files
-Tool: obsidian_list_files_in_vault()
-Result: [""💡 Project Ideas.md"", ""📝 Daily Notes.md"", ...]
+EXAMPLES:
+❌ BAD: ""I have listed the files. Which file would you like to read?""
+✅ GOOD: ""Here are the files in your vault: [list]. Let me know if you'd like to explore any of them!""
 
-Step 2: Match filename
-User input normalized: ""project ideas.md""
-Check each file:
-- ""💡 Project Ideas.md"" → normalized: ""project ideas.md"" ✓ MATCH
-Found exact path: ""💡 Project Ideas.md""
-
-Step 3: Append content
-Tool: obsidian_append_content(path: ""💡 Project Ideas.md"", content: ""meeting notes"")
-
-Step 4: Confirm
-Response: ""I will append 'meeting notes' to the file: 💡 Project Ideas.md. Please confirm to proceed.""
+❌ BAD: ""I found Project Ideas.md. Should I read it?""
+✅ GOOD: ""Here are the contents of 💡 Project Ideas.md: [contents]""
 
 CRITICAL:
-- Always use the EXACT vault path (including emojis) when calling MCP tools like obsidian_append_content or obsidian_patch_content. Never strip emojis from paths passed to tools.
-- To find a file by its name, you MUST use obsidian_list_files_in_vault() followed by normalization and matching. DO NOT use obsidian_simple_search or obsidian_complex_search for this purpose, as they search file contents, not filenames.
-";
-    return new ObsidianAssistantService(llmFactory, mcpClient, instructions);
+- Use EXACT paths with emojis in tool calls
+- Never use search tools to find filenames
+- List operations don't need confirmation
+- Read operations don't need confirmation  
+- Write/modify/delete operations need confirmation";
+
+    return new ObsidianAssistantService(llmFactory, mcpClient, instructions, logger);
 });
 
 var app = builder.Build();
@@ -102,13 +98,13 @@ app.MapPost("/chat", async (ChatRequest request, ObsidianAssistantService assist
 {
     var responseText = await assistant.ChatAsync(request);
     var fileOperationResult = ExtractFileOperationResult(responseText);
-    
+
     var response = new
     {
         text = responseText,
         fileOperationResult = fileOperationResult
     };
-    
+
     return Results.Ok(response);
 });
 
@@ -150,21 +146,55 @@ static FileOperationData? ExtractFileOperationResult(string response)
     return null;
 }
 
-app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, ObsidianAssistantService assistant) =>
+app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, ObsidianAssistantService assistant, ILogger<Program> logger) =>
 {
-    context.Response.ContentType = "application/x-ndjson";
+    context.Response.ContentType = "text/event-stream";
     context.Response.Headers.CacheControl = "no-cache";
     context.Response.Headers.Connection = "keep-alive";
 
-    var options = new JsonSerializerOptions
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
+    logger.LogInformation("Starting SSE stream for message: {Message}", request.Message);
+    var updateCount = 0;
 
-    await foreach (var message in assistant.StreamChatAsync(request, context.RequestAborted))
+    try
     {
-        var jsonMessage = JsonSerializer.Serialize(message, options);
-        await context.Response.WriteAsync(jsonMessage + "\n", context.RequestAborted);
+        await foreach (var update in assistant.StreamChatAsync(request, context.RequestAborted))
+        {
+            updateCount++;
+
+            // Check if this is a tool call message (role = "tool_call")
+            if (update.Role == "tool_call")
+            {
+                logger.LogInformation("Sending tool_call event: {ToolName}", update.Content);
+                await context.Response.WriteAsync($"event: tool_call\ndata: {update.Content}\n\n", context.RequestAborted);
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+            }
+            // Send incremental text as SSE data line - ALWAYS with data: prefix
+            else if (!string.IsNullOrEmpty(update.Content))
+            {
+                // Log with escaped characters
+                var escapedContent = update.Content.Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+                logger.LogInformation("Sending token #{Count}: RAW='{Escaped}' (Length={Length})",
+                    updateCount,
+                    escapedContent.Length > 100 ? escapedContent.Substring(0, 100) + "..." : escapedContent,
+                    update.Content.Length);
+
+                // CRITICAL: Always send with data: prefix immediately
+                await context.Response.WriteAsync($"data: {update.Content}\n\n", context.RequestAborted);
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+            }
+        }
+
+        // Send completion marker
+        logger.LogInformation("Stream complete. Sending [DONE] marker after {Count} updates", updateCount);
+        await context.Response.WriteAsync("data: [DONE]\n\n", context.RequestAborted);
+        await context.Response.Body.FlushAsync(context.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error during streaming after {Count} updates", updateCount);
+
+        // Send error event
+        await context.Response.WriteAsync($"event: error\ndata: {ex.Message}\n\n", context.RequestAborted);
         await context.Response.Body.FlushAsync(context.RequestAborted);
     }
 });
