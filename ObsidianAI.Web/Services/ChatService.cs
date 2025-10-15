@@ -1,6 +1,5 @@
 using System.Net.Http.Json;
 using System.Text.Json;
-using Microsoft.Extensions.Configuration;
 using ObsidianAI.Web.Models;
 
 namespace ObsidianAI.Web.Services;
@@ -11,7 +10,6 @@ namespace ObsidianAI.Web.Services;
 public class ChatService : IChatService
 {
     private readonly HttpClient _httpClient;
-    private readonly IConfiguration _configuration;
     private readonly ILogger<ChatService> _logger;
     
     public ChatService(HttpClient httpClient, ILogger<ChatService> logger)

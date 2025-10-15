@@ -113,6 +113,7 @@ namespace ObsidianAI.Web.Models
         Create,
         Copy,
         Rename,
+        Modify,
         Other
     }
 }

@@ -23,7 +23,8 @@
     <div class="privacy-warning" role="alert" aria-live="polite">
         <span class="privacy-warning-icon" aria-hidden="true">⚠️</span>
         <div>
-            <strong>Privacy Notice:</strong> You are using the OpenRouter LLM provider. Your prompts and data will be sent to a third-party cloud service.
+            <strong>Privacy Notice:</strong> You are using the OpenRouter LLM provider. Your prompts and data will be sent
+            to a third-party cloud service.
         </div>
     </div>
 }
@@ -33,10 +34,8 @@
     {
         @foreach (var message in conversationHistory)
         {
-            <MessageBubble Message="@message"
-                          OnActionConfirmed="HandleActionConfirmed"
-                          OnActionCancelled="HandleActionCancelled"
-                          OnActionEdit="HandleActionEdit" />
+            <MessageBubble Message="@message" OnActionConfirmed="HandleActionConfirmed"
+                OnActionCancelled="HandleActionCancelled" OnActionEdit="HandleActionEdit" />
         }
     }
     else
@@ -126,7 +125,7 @@
                     }
                     catch (InvalidOperationException)
                     {
-                        // Component may have been disposed, ignore
+                    // Component may have been disposed, ignore
                     }
                 }
             }
@@ -151,7 +150,7 @@
                 }
                 catch (InvalidOperationException)
                 {
-                    // Component may have been disposed, ignore
+                // Component may have been disposed, ignore
                 }
                 await ScrollToBottom();
             }
@@ -178,7 +177,7 @@
                 }
                 catch (InvalidOperationException)
                 {
-                    // Component may have been disposed, ignore
+                // Component may have been disposed, ignore
                 }
             }
         });
@@ -191,7 +190,7 @@
     {
         quickActions = await ChatService.GetQuickActionsAsync();
     }
-    
+
     private async Task FetchLlmProvider()
     {
         var provider = await ChatService.GetLlmProviderAsync();
@@ -233,32 +232,25 @@
 
         try
         {
-            // For testing, call the new direct method instead of SignalR streaming
             var responseMessage = await ChatService.SendMessageAndGetResponseAsync(messageToSend);
-            
+
             // Remove the processing placeholder
             conversationHistory.Remove(currentAiMessage!);
-            
-            // Add the response from the service
-            conversationHistory.Add(responseMessage);
+
+            // Set current AI message and add to history BEFORE parsing so it can be updated in place
+            currentAiMessage = responseMessage with
+            {
+                IsProcessing = false,
+                ProcessingType = ProcessingType.None
+            };
+            conversationHistory.Add(currentAiMessage);
+
+            // Parse for ActionCard/FileOperation and update the message in-place
+            await ParseResponseForComponents(responseMessage.Content);
 
             isProcessing = false;
             currentAiMessage = null;
-            try
-            {
-                try
-                {
-                    StateHasChanged();
-                }
-                catch (InvalidOperationException)
-                {
-                    // Component may have been disposed, ignore
-                }
-            }
-            catch (InvalidOperationException)
-            {
-                // Component may have been disposed, ignore
-            }
+            StateHasChanged();
             await ScrollToBottom();
         }
         catch (Exception ex)
@@ -406,50 +398,165 @@
         await ScrollToBottom();
     }
 
-    private async Task ParseResponseForComponents(string response)
+private Task ParseResponseForComponents(string response)
+{
+    // Check if this is a confirmation request (agent asking permission)
+    if (ContainsConfirmationKeywords(response))
     {
-        // Use regex to detect file operations in the response
-        var regex = new Regex(@"(?i)(created|appended to|modified|patched|wrote to) file:?\s*""?'?([^\s""'?.]+)""?'?", RegexOptions.IgnoreCase);
-        var match = regex.Match(response);
+        // Pattern 1: "Append to file: X with content: Y"
+        var fileOpPattern1 = new Regex(
+            @"(?i)(append|create|write|modify|patch|delete)\s+to\s+file:\s*[`""']?([^`""'\n]+\.md)[`""']?\s+with\s+content:\s*[""']([^""'\n]+)[""']",
+            RegexOptions.IgnoreCase);
+        var fileOpMatch = fileOpPattern1.Match(response);
 
-        if (match.Success)
+        // Pattern 2: "append [content] to [file]"
+        if (!fileOpMatch.Success)
         {
-            var action = match.Groups[1].Value.Trim();
-            var filePath = match.Groups[2].Value.Trim();
-            
-            var fileOperationData = new FileOperationData
+            var fileOpPattern2 = new Regex(
+                @"(?i)(append|create|write|modify|patch|delete)\s+(?:the\s+)?(?:content:?\s*)?[""']([^""'\n]+?)[""']?\s+(?:to|in)\s+(?:the\s+)?(?:file:?\s*)?[`""']?([^`""'\n.]+\.md)",
+                RegexOptions.IgnoreCase);
+            fileOpMatch = fileOpPattern2.Match(response);
+        }
+
+        if (fileOpMatch.Success)
+        {
+            var operation = fileOpMatch.Groups[1].Value.Trim();
+            string content;
+            string filePath;
+
+            // Check which pattern matched and extract accordingly
+            if (response.Contains("with content:"))
             {
-                Action = char.ToUpper(action[0]) + action.Substring(1), // Capitalize first letter
-                FilePath = filePath
+                filePath = fileOpMatch.Groups[2].Value.Trim();
+                content = fileOpMatch.Groups[3].Value.Trim();
+            }
+            else
+            {
+                content = fileOpMatch.Groups[2].Value.Trim();
+                filePath = fileOpMatch.Groups[3].Value.Trim();
+            }
+
+            // Create ActionCard for confirmation
+            var actionCard = new ActionCardData
+            {
+                Id = Guid.NewGuid().ToString(),
+                Title = $"{char.ToUpper(operation[0])}{operation.Substring(1).ToLower()} Content",
+                OperationType = operation.ToLowerInvariant() switch
+                {
+                    "append" => ActionOperationType.Other,
+                    "create" => ActionOperationType.Create,
+                    "delete" => ActionOperationType.Delete,
+                    _ => ActionOperationType.Other
+                },
+                Actions = new List<PlannedAction>
+                {
+                    new PlannedAction
+                    {
+                        Type = operation.ToLowerInvariant() switch
+                        {
+                            "append" => ActionType.Modify,
+                            "create" => ActionType.Create,
+                            "delete" => ActionType.Delete,
+                            "modify" => ActionType.Modify,
+                            "patch" => ActionType.Modify,
+                            "write" => ActionType.Modify,
+                            _ => ActionType.Other
+                        },
+                        Source = filePath,
+                        Destination = filePath,
+                        Description = $"{char.ToUpper(operation[0])}{operation.Substring(1).ToLower()} \"{content}\" → {filePath}"
+                    }
+                },
+                Status = ActionCardStatus.Pending
             };
 
+            // Attach to the current AI message in history
+            int index = -1;
             if (currentAiMessage != null)
             {
-                var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
-                if (index >= 0)
+                index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+            }
+            if (index < 0)
+            {
+                index = conversationHistory.FindLastIndex(m => m.Sender == MessageSender.AI);
+            }
+
+            if (index >= 0)
+            {
+                var msg = conversationHistory[index];
+                var updated = msg with
                 {
-                    currentAiMessage = currentAiMessage with
-                    {
-                        FileOperation = fileOperationData,
-                        ProcessingType = ProcessingType.None
-                    };
-                    conversationHistory[index] = currentAiMessage;
+                    ActionCard = actionCard,
+                    ProcessingType = ProcessingType.None
+                };
+                conversationHistory[index] = updated;
+
+                if (currentAiMessage != null && currentAiMessage.Id == msg.Id)
+                {
+                    currentAiMessage = updated;
                 }
             }
+
+            return Task.CompletedTask;
         }
-        // If no match is found, FileOperation remains null (default)
     }
+
+    // If not a confirmation request, check if it's a completed operation
+    var completedOpMatch = Regex.Match(response,
+        @"(?i)(created|appended|modified|patched|wrote)\s+(?:to\s+)?(?:file:?\s*)?[`""']?([^`""'\n]+\.md)",
+        RegexOptions.IgnoreCase);
+
+    if (completedOpMatch.Success)
+    {
+        var action = completedOpMatch.Groups[1].Value.Trim();
+        var filePath = completedOpMatch.Groups[2].Value.Trim();
+
+        var fileOperationData = new FileOperationData
+        {
+            Action = char.ToUpper(action[0]) + action.Substring(1),
+            FilePath = filePath
+        };
+
+        int index = -1;
+        if (currentAiMessage != null)
+        {
+            index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+        }
+        if (index < 0)
+        {
+            index = conversationHistory.FindLastIndex(m => m.Sender == MessageSender.AI);
+        }
+
+        if (index >= 0)
+        {
+            var msg = conversationHistory[index];
+            var updated = msg with
+            {
+                FileOperation = fileOperationData,
+                ProcessingType = ProcessingType.None
+            };
+            conversationHistory[index] = updated;
+
+            if (currentAiMessage != null && currentAiMessage.Id == msg.Id)
+            {
+                currentAiMessage = updated;
+            }
+        }
+    }
+
+    return Task.CompletedTask;
+}
 
     private static bool ContainsConfirmationKeywords(string text)
     {
         var lower = text.ToLowerInvariant();
         return lower.Contains("confirm") ||
-               lower.Contains("confirmation") ||
-               lower.Contains("proceed") ||
-               lower.Contains("are you sure") ||
-               lower.Contains("please verify") ||
-               lower.Contains("i will perform") ||
-               lower.Contains("planned operations");
+        lower.Contains("confirmation") ||
+        lower.Contains("proceed") ||
+        lower.Contains("are you sure") ||
+        lower.Contains("please verify") ||
+        lower.Contains("i will perform") ||
+        lower.Contains("planned operations");
     }
 
     private static ActionOperationType DetermineOperationType(List<PlannedAction> actions)
