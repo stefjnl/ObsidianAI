@@ -26,7 +26,6 @@ public class ChatHub : Hub
 
         try
         {
-            // Call the Agent Framework API streaming endpoint
             var request = new HttpRequestMessage(HttpMethod.Post, "/chat/stream")
             {
                 Content = JsonContent.Create(new { message })
@@ -35,29 +34,27 @@ public class ChatHub : Hub
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
 
-            // Read the streaming response
             using var stream = await response.Content.ReadAsStreamAsync();
             using var reader = new StreamReader(stream);
 
             var fullResponse = new StringBuilder();
-            var buffer = new char[128];  // Larger buffer for batching tokens
+            var buffer = new char[128];
             int charsRead;
 
-            // Stream in chunks to reduce SignalR overhead while maintaining streaming feel
             while ((charsRead = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
             {
                 var chunk = new string(buffer, 0, charsRead);
-                fullResponse.Append(chunk);
+                
+                // DECODE UNICODE BEFORE SENDING
+                var decodedChunk = TextDecoderService.DecodeSurrogatePairs(chunk);
+                fullResponse.Append(decodedChunk);
 
-                // Send chunk instead of single character
-                await Clients.Caller.SendAsync("ReceiveToken", chunk);
-
-                // Small delay to prevent UI overload
+                await Clients.Caller.SendAsync("ReceiveToken", decodedChunk);
                 await Task.Delay(10);
             }
 
-            // Send completion event
-            await Clients.Caller.SendAsync("MessageComplete", fullResponse.ToString());
+            var finalResponse = TextDecoderService.DecodeSurrogatePairs(fullResponse.ToString());
+            await Clients.Caller.SendAsync("MessageComplete", finalResponse);
 
             _logger.LogInformation("Message processing complete");
         }

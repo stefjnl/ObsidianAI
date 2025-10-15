@@ -1,0 +1,36 @@
+@using Markdig
+@inject IJSRuntime JSRuntime
+
+<div class="markdown-content" @ref="markdownElement">
+    @((MarkupString)HtmlContent)
+</div>
+
+@code {
+    [Parameter]
+    public string Content { get; set; } = string.Empty;
+
+    private ElementReference markdownElement;
+    private string HtmlContent => ConvertMarkdown(Content);
+
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .UseSoftlineBreakAsHardlineBreak()
+        .Build();
+
+    private static string ConvertMarkdown(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown))
+            return string.Empty;
+
+        var html = Markdown.ToHtml(markdown, Pipeline);
+        return html;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("highlightCode", markdownElement);
+        }
+    }
+}

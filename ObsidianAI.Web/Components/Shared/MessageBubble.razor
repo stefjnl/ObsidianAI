@@ -5,7 +5,14 @@
         @(Message.Sender == MessageSender.User ? "👤" : "🤖")
     </div>
     <div class="message-content">
-        @Message.Content
+        @if (Message.Sender == MessageSender.AI)
+        {
+            <MarkdownContent Content="@Message.Content" />
+        }
+        else
+        {
+            @Message.Content
+        }
         
         @if (Message.IsProcessing)
         {
@@ -26,6 +33,11 @@
             {
                 <SearchResult Result="result" />
             }
+        }
+        
+        @if (Message.FileOperation != null)
+        {
+            <FileOperationResult Result="Message.FileOperation" />
         }
     </div>
 </div>
