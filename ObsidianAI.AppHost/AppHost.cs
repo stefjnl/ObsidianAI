@@ -2,9 +2,9 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 // Add MCP Gateway as an executable resource
 var mcpGateway = builder.AddExecutable("mcp-gateway", "docker", workingDirectory: ".", args: [
-    "mcp", "gateway", "run", 
-    "--transport", "streaming", 
-    "--port", "8033", 
+    "mcp", "gateway", "run",
+    "--transport", "streaming",
+    "--port", "8033",
     "--servers", "obsidian"
 ]);
 

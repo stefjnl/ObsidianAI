@@ -16,7 +16,7 @@ public class StartChatUseCase
     /// <param name="extractor">Extractor for file operations from response text.</param>
     /// <param name="mcpClient">Optional MCP client for fetching available tools.</param>
     public StartChatUseCase(
-        ObsidianAI.Domain.Ports.IAIAgentFactory agentFactory, 
+        ObsidianAI.Domain.Ports.IAIAgentFactory agentFactory,
         ObsidianAI.Domain.Services.IFileOperationExtractor extractor,
         ModelContextProtocol.Client.McpClient? mcpClient = null)
     {

@@ -35,7 +35,7 @@ namespace ObsidianAI.Infrastructure.LLM
 
             _chatClient = (IChatClient)openAIClient.GetChatClient(model);
             _instructions = instructions ?? string.Empty;
-            
+
             // Create agent with tools (if provided)
             var aiTools = tools?.Cast<AITool>().ToArray() ?? Array.Empty<AITool>();
             _agent = new ChatClientAgent(

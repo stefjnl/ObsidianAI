@@ -1,6 +1,6 @@
 namespace ObsidianAI.Domain.Ports
 {
-    
+
 
     /// <summary>
     /// Factory to build <see cref="IChatAgent"/> instances from provider configuration and instructions.

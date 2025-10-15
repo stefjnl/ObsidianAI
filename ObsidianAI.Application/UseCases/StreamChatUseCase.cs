@@ -29,8 +29,8 @@ public class StreamChatUseCase
     /// <param name="ct">Cancellation token.</param>
     /// <returns>An asynchronous enumerable of chat stream events.</returns>
     public async IAsyncEnumerable<ObsidianAI.Domain.Models.ChatStreamEvent> ExecuteAsync(
-        ObsidianAI.Domain.Models.ChatInput input, 
-        string instructions, 
+        ObsidianAI.Domain.Models.ChatInput input,
+        string instructions,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(input.Message))
@@ -46,7 +46,7 @@ public class StreamChatUseCase
         }
 
         var agent = await _agentFactory.CreateAgentAsync(instructions, tools);
-        
+
         await foreach (var evt in agent.StreamAsync(input.Message, ct).ConfigureAwait(false))
         {
             yield return evt;
