@@ -32,6 +32,7 @@ builder.Services.AddSingleton<ObsidianAssistantService>(sp =>
 {
     var llmFactory = sp.GetRequiredService<ILlmClientFactory>();
     var mcpClient = sp.GetRequiredService<McpClient>();
+    var logger = sp.GetRequiredService<ILogger<ObsidianAssistantService>>();
     var instructions = @"You help users manage their Obsidian vault.
 
 FILE RESOLUTION STRATEGY:
@@ -79,7 +80,7 @@ CRITICAL:
 - Always use the EXACT vault path (including emojis) when calling MCP tools like obsidian_append_content or obsidian_patch_content. Never strip emojis from paths passed to tools.
 - To find a file by its name, you MUST use obsidian_list_files_in_vault() followed by normalization and matching. DO NOT use obsidian_simple_search or obsidian_complex_search for this purpose, as they search file contents, not filenames.
 ";
-    return new ObsidianAssistantService(llmFactory, mcpClient, instructions);
+    return new ObsidianAssistantService(llmFactory, mcpClient, instructions, logger);
 });
 
 var app = builder.Build();
@@ -102,13 +103,13 @@ app.MapPost("/chat", async (ChatRequest request, ObsidianAssistantService assist
 {
     var responseText = await assistant.ChatAsync(request);
     var fileOperationResult = ExtractFileOperationResult(responseText);
-    
+
     var response = new
     {
         text = responseText,
         fileOperationResult = fileOperationResult
     };
-    
+
     return Results.Ok(response);
 });
 
@@ -150,21 +151,51 @@ static FileOperationData? ExtractFileOperationResult(string response)
     return null;
 }
 
-app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, ObsidianAssistantService assistant) =>
+app.MapPost("/chat/stream", async (ChatRequest request, HttpContext context, ObsidianAssistantService assistant, ILogger<Program> logger) =>
 {
-    context.Response.ContentType = "application/x-ndjson";
+    context.Response.ContentType = "text/event-stream";
     context.Response.Headers.CacheControl = "no-cache";
     context.Response.Headers.Connection = "keep-alive";
 
-    var options = new JsonSerializerOptions
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
+    logger.LogInformation("Starting SSE stream for message: {Message}", request.Message);
+    var updateCount = 0;
 
-    await foreach (var message in assistant.StreamChatAsync(request, context.RequestAborted))
+    try
     {
-        var jsonMessage = JsonSerializer.Serialize(message, options);
-        await context.Response.WriteAsync(jsonMessage + "\n", context.RequestAborted);
+        await foreach (var update in assistant.StreamChatAsync(request, context.RequestAborted))
+        {
+            updateCount++;
+
+            // Check if this is a tool call message (role = "tool_call")
+            if (update.Role == "tool_call")
+            {
+                logger.LogInformation("Sending tool_call event: {ToolName}", update.Content);
+                await context.Response.WriteAsync($"event: tool_call\ndata: {update.Content}\n\n", context.RequestAborted);
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+            }
+            // Send incremental text as SSE data line - ALWAYS with data: prefix
+            else if (!string.IsNullOrEmpty(update.Content))
+            {
+                logger.LogDebug("Sending token #{Count}: '{Content}'", updateCount,
+                    update.Content.Length > 50 ? update.Content.Substring(0, 50) + "..." : update.Content);
+
+                // CRITICAL: Always send with data: prefix immediately
+                await context.Response.WriteAsync($"data: {update.Content}\n\n", context.RequestAborted);
+                await context.Response.Body.FlushAsync(context.RequestAborted);
+            }
+        }
+
+        // Send completion marker
+        logger.LogInformation("Stream complete. Sending [DONE] marker after {Count} updates", updateCount);
+        await context.Response.WriteAsync("data: [DONE]\n\n", context.RequestAborted);
+        await context.Response.Body.FlushAsync(context.RequestAborted);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error during streaming after {Count} updates", updateCount);
+
+        // Send error event
+        await context.Response.WriteAsync($"event: error\ndata: {ex.Message}\n\n", context.RequestAborted);
         await context.Response.Body.FlushAsync(context.RequestAborted);
     }
 });

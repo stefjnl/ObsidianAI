@@ -1,5 +1,6 @@
 @page "/"
 @rendermode InteractiveServer
+@implements IAsyncDisposable
 @using ObsidianAI.Web.Models
 @using ObsidianAI.Web.Services
 @using ObsidianAI.Web.Components.Shared
@@ -31,9 +32,12 @@
     private List<QuickAction> quickActions = new();
     private string currentMessage = string.Empty;
     private bool isProcessing = false;
+    private bool isStreaming = false;
     private ChatMessage? currentAiMessage;
     private string llmProvider = string.Empty;
     private bool isOpenRouter = false;
+    private int tokenBatchCount = 0;
+    private const int TokenBatchSize = 3;
 
     protected override async Task OnInitializedAsync()
     {
@@ -53,90 +57,153 @@
     private async Task InitializeSignalR()
     {
         hubConnection = new HubConnectionBuilder()
-        .WithUrl(NavigationManager.ToAbsoluteUri("/chathub"))
-        .WithAutomaticReconnect()
-        .Build();
+            .WithUrl(NavigationManager.ToAbsoluteUri("/chathub"))
+            .WithAutomaticReconnect()
+            .Build();
 
         hubConnection.On<string>("ReceiveToken", (token) =>
         {
             InvokeAsync(() =>
-    {
-            if (currentAiMessage != null)
             {
-            // Find the message in the list
-                var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
-                if (index >= 0)
+                if (currentAiMessage != null)
                 {
-                // Create updated message (remove processing indicator on first token)
-                    currentAiMessage = currentAiMessage with
+                    // Find the message in the list
+                    var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                    if (index >= 0)
                     {
-                        Content = currentAiMessage.Content + token,
-                        IsProcessing = false // <-- Add this line
-                    };
-                // Replace in list
-                    conversationHistory[index] = currentAiMessage;
+                        // Create updated message (remove processing indicator on first token)
+                        currentAiMessage = currentAiMessage with
+                        {
+                            Content = currentAiMessage.Content + token,
+                            IsProcessing = false
+                        };
+                        
+                        // Replace in list
+                        conversationHistory[index] = currentAiMessage;
+                        
+                        // Implement token batching: only update UI every N tokens
+                        tokenBatchCount++;
+                        if (tokenBatchCount >= TokenBatchSize)
+                        {
+                            tokenBatchCount = 0;
+                            try
+                            {
+                                StateHasChanged();
+                            }
+                            catch (InvalidOperationException)
+                            {
+                                // Component may have been disposed, ignore
+                            }
+                        }
+                    }
+                }
+            });
+        });
+
+        hubConnection.On<object>("StatusUpdate", (update) =>
+        {
+            InvokeAsync(() =>
+            {
+                if (currentAiMessage != null)
+                {
+                    try
+                    {
+                        // Extract tool name from update object
+                        var json = System.Text.Json.JsonSerializer.Serialize(update);
+                        var statusObj = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json);
+                        
+                        if (statusObj.TryGetProperty("tool", out var toolProp))
+                        {
+                            var toolName = toolProp.GetString();
+                            
+                            // Update the AI message with tool call status
+                            var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                            if (index >= 0)
+                            {
+                                currentAiMessage = currentAiMessage with
+                                {
+                                    Content = currentAiMessage.Content + $"\n\n🔍 Calling {toolName}...\n\n"
+                                };
+                                conversationHistory[index] = currentAiMessage;
+                                StateHasChanged();
+                            }
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore errors parsing status update
+                    }
+                }
+            });
+        });
+
+        hubConnection.On<string>("MessageComplete", (finalMessage) =>
+        {
+            InvokeAsync(async () =>
+            {
+                if (currentAiMessage != null)
+                {
+                    // Ensure any remaining tokens are displayed
+                    tokenBatchCount = 0;
+                    
+                    // Parse the message for action cards or search results
+                    await ParseResponseForComponents(finalMessage);
+
+                    var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                    if (index >= 0)
+                    {
+                        currentAiMessage = currentAiMessage with { IsProcessing = false };
+                        conversationHistory[index] = currentAiMessage;
+                    }
+                    
+                    currentAiMessage = null;
+                    isProcessing = false;
+                    isStreaming = false;
+                    
                     try
                     {
                         StateHasChanged();
                     }
                     catch (InvalidOperationException)
                     {
-                    // Component may have been disposed, ignore
+                        // Component may have been disposed, ignore
                     }
+                    await ScrollToBottom();
                 }
-            }
-        });
-        });
-
-        hubConnection.On<string>("MessageComplete", (finalMessage) =>
-        {
-            InvokeAsync(async () =>
-    {
-            if (currentAiMessage != null)
-            {
-            // Parse the message for action cards or search results
-                await ParseResponseForComponents(finalMessage);
-
-                currentAiMessage = currentAiMessage with { IsProcessing = false };
-                currentAiMessage = null;
-                isProcessing = false;
-                try
-                {
-                    StateHasChanged();
-                }
-                catch (InvalidOperationException)
-                {
-                // Component may have been disposed, ignore
-                }
-                await ScrollToBottom();
-            }
-        });
+            });
         });
 
         hubConnection.On<string>("Error", (error) =>
         {
             InvokeAsync(() =>
-    {
-            if (currentAiMessage != null)
             {
-                currentAiMessage = new ChatMessage
+                if (currentAiMessage != null)
                 {
-                    Content = $"Error: {error}",
-                    Sender = MessageSender.AI,
-                    Timestamp = DateTime.UtcNow
-                };
-                currentAiMessage = null;
-                isProcessing = false;
-                try
-                {
-                    StateHasChanged();
+                    var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                    if (index >= 0)
+                    {
+                        currentAiMessage = currentAiMessage with
+                        {
+                            Content = currentAiMessage.Content + $"\n\nError: {error}",
+                            IsProcessing = false
+                        };
+                        conversationHistory[index] = currentAiMessage;
+                    }
+                    
+                    currentAiMessage = null;
+                    isProcessing = false;
+                    isStreaming = false;
+                    
+                    try
+                    {
+                        StateHasChanged();
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Component may have been disposed, ignore
+                    }
                 }
-                catch (InvalidOperationException)
-                {
-                // Component may have been disposed, ignore
-                }
-            }
-        });
+            });
         });
 
         await hubConnection.StartAsync();
@@ -157,7 +224,7 @@
 
     private async Task SendMessage()
     {
-        if (string.IsNullOrWhiteSpace(currentMessage) || isProcessing)
+        if (string.IsNullOrWhiteSpace(currentMessage) || isProcessing || isStreaming)
             return;
 
         var userMessage = new ChatMessage
@@ -171,6 +238,7 @@
         var messageToSend = currentMessage;
         currentMessage = string.Empty;
         isProcessing = true;
+        isStreaming = true;
 
         // Create a placeholder AI message for streaming
         currentAiMessage = new ChatMessage
@@ -188,43 +256,35 @@
 
         try
         {
-            var responseMessage = await ChatService.SendMessageAndGetResponseAsync(messageToSend);
-
-            // Remove the processing placeholder
-            conversationHistory.Remove(currentAiMessage!);
-
-            // Set current AI message and add to history BEFORE parsing so it can be updated in place
-            currentAiMessage = responseMessage with
+            if (hubConnection != null && hubConnection.State == HubConnectionState.Connected)
             {
-                IsProcessing = false,
-                ProcessingType = ProcessingType.None
-            };
-            conversationHistory.Add(currentAiMessage);
-
-            // Parse for ActionCard/FileOperation and update the message in-place
-            await ParseResponseForComponents(responseMessage.Content);
-
-            isProcessing = false;
-            currentAiMessage = null;
-            StateHasChanged();
-            await ScrollToBottom();
+                // Send message via SignalR for streaming
+                await hubConnection.SendAsync("StreamMessage", messageToSend, conversationHistory);
+            }
+            else
+            {
+                throw new Exception("SignalR connection is not established.");
+            }
         }
         catch (Exception ex)
         {
             // Handle connection errors
             if (currentAiMessage != null)
             {
-                var errorMessage = new ChatMessage
+                var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                if (index >= 0)
                 {
-                    Content = $"Connection error: {ex.Message}",
-                    Sender = MessageSender.AI,
-                    Timestamp = DateTime.UtcNow
-                };
-
-                conversationHistory.Remove(currentAiMessage);
-                conversationHistory.Add(errorMessage);
+                    currentAiMessage = currentAiMessage with
+                    {
+                        Content = $"Connection error: {ex.Message}",
+                        IsProcessing = false
+                    };
+                    conversationHistory[index] = currentAiMessage;
+                }
+                
                 currentAiMessage = null;
                 isProcessing = false;
+                isStreaming = false;
             }
             StateHasChanged();
         }

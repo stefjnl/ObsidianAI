@@ -12,8 +12,8 @@ builder.Services.AddRazorComponents()
 // Add SignalR
 builder.Services.AddSignalR();
 
-// Register dedicated HttpClient for ChatHub with API base address and extended timeout for streaming
-builder.Services.AddHttpClient<ChatHub>(client =>
+// Register named HttpClient for API communication
+builder.Services.AddHttpClient("ObsidianAI.Api", client =>
 {
     // Use Aspire service discovery if available, otherwise use direct port
     var apiEndpoint = builder.Configuration.GetConnectionString("api")
