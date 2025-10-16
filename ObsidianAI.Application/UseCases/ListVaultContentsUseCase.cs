@@ -67,7 +67,7 @@ public sealed class ListVaultContentsUseCase
                 currentPath = folderPath;
             }
 
-            var items = ParseVaultItems(toolResult.Content);
+            var items = ParseVaultItems(toolResult.Content, folderPath);
             _logger.LogInformation("Retrieved {Count} vault items from {Path}", items.Count, currentPath);
 
             // Debug: Log first few items
@@ -86,7 +86,7 @@ public sealed class ListVaultContentsUseCase
         }
     }
 
-    private List<VaultItemDto> ParseVaultItems(IEnumerable<ContentBlock>? content)
+    private List<VaultItemDto> ParseVaultItems(IEnumerable<ContentBlock>? content, string? parentPath)
     {
         if (content == null)
         {
@@ -105,6 +105,14 @@ public sealed class ListVaultContentsUseCase
         // Debug: Log raw response
         _logger.LogInformation("MCP raw response (first 500 chars): {Text}",
             text.Length > 500 ? text.Substring(0, 500) : text);
+
+        // Check if the response contains an MCP error
+        if (text.Contains("Caught Exception. Error: Error 40400: Not Found", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("Caught Exception", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("MCP returned an error response: {ErrorText}", text);
+            return new List<VaultItemDto>();
+        }
 
         // Check if response is JSON array format
         if (text.StartsWith("[") && text.EndsWith("]"))
@@ -125,13 +133,16 @@ public sealed class ListVaultContentsUseCase
                         // Determine if it's a folder (ends with /) or file
                         var isFolder = path.EndsWith("/", StringComparison.Ordinal);
                         var cleanPath = isFolder ? path.TrimEnd('/') : path;
+                        
+                        // Build full path: if we're browsing a subfolder, prepend the parent path
+                        var fullPath = BuildFullPath(parentPath, cleanPath);
                         var name = GetFileName(cleanPath);
 
                         if (isFolder)
                         {
                             items.Add(new VaultItemDto(
                                 Name: name,
-                                Path: cleanPath,
+                                Path: fullPath,
                                 Type: VaultItemType.Folder,
                                 Extension: null,
                                 Size: null,
@@ -142,7 +153,7 @@ public sealed class ListVaultContentsUseCase
                             var extension = System.IO.Path.GetExtension(path);
                             items.Add(new VaultItemDto(
                                 Name: name,
-                                Path: cleanPath,
+                                Path: fullPath,
                                 Type: VaultItemType.File,
                                 Extension: extension,
                                 Size: null,
@@ -154,14 +165,20 @@ public sealed class ListVaultContentsUseCase
             catch (System.Text.Json.JsonException ex)
             {
                 _logger.LogError(ex, "Failed to parse MCP response as JSON, falling back to line-by-line parsing");
+                // Check if the response contains an error message in the text
+                if (text.Contains("Caught Exception", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("MCP response contains error message, returning empty list");
+                    return new List<VaultItemDto>();
+                }
                 // Fall back to line-by-line parsing
-                return ParseAsLines(text);
+                return ParseAsLines(text, parentPath);
             }
         }
         else
         {
             // Parse line by line for non-JSON responses
-            return ParseAsLines(text);
+            return ParseAsLines(text, parentPath);
         }
 
         // Sort: folders first, then files, both alphabetically
@@ -171,7 +188,7 @@ public sealed class ListVaultContentsUseCase
             .ToList();
     }
 
-    private List<VaultItemDto> ParseAsLines(string text)
+    private List<VaultItemDto> ParseAsLines(string text, string? parentPath)
     {
         var items = new List<VaultItemDto>();
         var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -184,16 +201,27 @@ public sealed class ListVaultContentsUseCase
                 continue;
             }
 
+            // Skip error messages that might be in the response
+            if (trimmedLine.Contains("Caught Exception", StringComparison.OrdinalIgnoreCase) ||
+                trimmedLine.Contains("Error:", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Skipping error line in MCP response: {Line}", trimmedLine);
+                continue;
+            }
+
             // Determine if it's a folder (ends with /) or file
             var isFolder = trimmedLine.EndsWith("/", StringComparison.Ordinal);
             var path = isFolder ? trimmedLine.TrimEnd('/') : trimmedLine;
+            
+            // Build full path: if we're browsing a subfolder, prepend the parent path
+            var fullPath = BuildFullPath(parentPath, path);
             var name = GetFileName(path);
 
             if (isFolder)
             {
                 items.Add(new VaultItemDto(
                     Name: name,
-                    Path: path,
+                    Path: fullPath,
                     Type: VaultItemType.Folder,
                     Extension: null,
                     Size: null,
@@ -204,7 +232,7 @@ public sealed class ListVaultContentsUseCase
                 var extension = System.IO.Path.GetExtension(path);
                 items.Add(new VaultItemDto(
                     Name: name,
-                    Path: path,
+                    Path: fullPath,
                     Type: VaultItemType.File,
                     Extension: extension,
                     Size: null,
@@ -213,6 +241,24 @@ public sealed class ListVaultContentsUseCase
         }
 
         return items;
+    }
+
+    private static string BuildFullPath(string? parentPath, string itemPath)
+    {
+        // If no parent path, return the item path as-is
+        if (string.IsNullOrWhiteSpace(parentPath))
+        {
+            return itemPath;
+        }
+
+        // If itemPath already contains parent path, return as-is
+        if (itemPath.StartsWith(parentPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return itemPath;
+        }
+
+        // Combine parent path with item path using forward slash
+        return $"{parentPath.TrimEnd('/')}/{itemPath.TrimStart('/')}";
     }
 
     private static string GetFileName(string path)

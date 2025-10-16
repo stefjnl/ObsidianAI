@@ -352,15 +352,26 @@
         if (query.TryGetValue("conversationId", out var conversationValues) &&
             Guid.TryParse(conversationValues.FirstOrDefault(), out var conversationId))
         {
-            await LoadConversationAsync(conversationId);
+            Logger.LogInformation("Loading conversation from URL query: {ConversationId}", conversationId);
+            try
+            {
+                await LoadConversationAsync(conversationId);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to load conversation from URL query, clearing query param: {ConversationId}", conversationId);
+                ClearConversationRoute();
+            }
         }
     }
 
     private async Task LoadConversationAsync(Guid conversationId)
     {
+        Logger.LogInformation("Starting to load conversation {ConversationId}", conversationId);
         try
         {
             var detail = await ChatService.LoadConversationAsync(conversationId);
+            Logger.LogInformation("Successfully loaded conversation {ConversationId} with {MessageCount} messages", conversationId, detail.Messages.Count);
             currentConversationId = detail.Id;
             conversationHistory = detail.Messages.ToList();
             currentConversationMetadata = new ConversationMetadata(
@@ -388,6 +399,7 @@
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load conversation {ConversationId}", conversationId);
+            throw; // Re-throw to let caller handle
         }
         finally
         {
@@ -748,8 +760,16 @@
 
     private void UpdateConversationRoute(Guid conversationId)
     {
-        var target = NavigationManager.GetUriWithQueryParameter("conversationId", conversationId.ToString());
-        NavigationManager.NavigateTo(target);
+        try
+        {
+            var target = NavigationManager.GetUriWithQueryParameter("conversationId", conversationId.ToString());
+            Logger.LogInformation("Updating conversation route to: {Target}", target);
+            NavigationManager.NavigateTo(target);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to update conversation route for {ConversationId}", conversationId);
+        }
     }
 
     private void ClearConversationRoute()
