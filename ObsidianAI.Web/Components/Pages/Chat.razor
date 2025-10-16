@@ -1244,11 +1244,14 @@
 
     private async Task HandleFileSelected(VaultItemData file)
     {
-        // Insert file reference into chat message
-        currentMessage = $"Read the file: {file.Path}";
+        // Insert file reference into chat message with explicit instruction
+        // Use the exact path from the vault for the AI to match
+        currentMessage = $"Read the file \"{file.Path}\"";
         isVaultBrowserOpen = false;
         StateHasChanged();
-        await Task.CompletedTask;
+        
+        // Auto-send the message
+        await SendMessage();
     }
 
     private void OpenSettings()
