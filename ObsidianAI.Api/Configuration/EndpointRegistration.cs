@@ -100,17 +100,19 @@ public static class EndpointRegistration
                         statusMessage = message.ActionCard.StatusMessage,
                         createdAt = message.ActionCard.CreatedAt,
                         completedAt = message.ActionCard.CompletedAt,
-                        plannedActions = message.PlannedActions.Select(action => new
-                        {
-                            id = action.Id,
-                            type = action.Type,
-                            source = action.Source,
-                            destination = action.Destination,
-                            description = action.Description,
-                            operation = action.Operation,
-                            content = action.Content,
-                            sortOrder = action.SortOrder
-                        })
+                        plannedActions = message.ActionCard == null
+                            ? Enumerable.Empty<object>()
+                            : message.PlannedActions.Select(action => (object)new
+                            {
+                                id = action.Id,
+                                type = action.Type,
+                                source = action.Source,
+                                destination = action.Destination,
+                                description = action.Description,
+                                operation = action.Operation,
+                                content = action.Content,
+                                sortOrder = action.SortOrder
+                            })
                     },
                     fileOperation = message.FileOperation == null ? null : new
                     {

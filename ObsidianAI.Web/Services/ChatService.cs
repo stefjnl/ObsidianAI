@@ -63,13 +63,16 @@ public class ChatService : IChatService
             
             var apiResponse = await response.Content.ReadFromJsonAsync<ChatApiResponse>();
             
+            var messageId = (apiResponse?.AssistantMessageId ?? Guid.NewGuid()).ToString();
             var chatMessage = new ChatMessage
             {
-                Id = (apiResponse?.AssistantMessageId ?? Guid.NewGuid()).ToString(),
+                Id = messageId,
+                ClientId = messageId,
                 Content = apiResponse?.Text ?? "No response text received",
                 Sender = MessageSender.AI,
                 Timestamp = DateTime.UtcNow,
-                FileOperation = apiResponse?.FileOperationResult
+                FileOperation = apiResponse?.FileOperationResult,
+                IsPending = false
             };
             
             _logger.LogInformation("Received structured response from API");
@@ -80,12 +83,15 @@ public class ChatService : IChatService
             _logger.LogError(ex, "Error sending message to API");
             
             // Return a user-friendly error message
+            var fallbackId = Guid.NewGuid().ToString();
             return new ChatMessage
             {
-                Id = Guid.NewGuid().ToString(),
+                Id = fallbackId,
+                ClientId = fallbackId,
                 Content = "Sorry, I encountered an error processing your request. Please try again.",
                 Sender = MessageSender.AI,
-                Timestamp = DateTime.UtcNow
+                Timestamp = DateTime.UtcNow,
+                IsPending = false
             };
         }
     }
@@ -520,9 +526,11 @@ public class ChatService : IChatService
                 FilePath = source.FileOperation.FilePath
             };
 
+        var identifier = source.Id.ToString();
         return new ChatMessage
         {
-            Id = source.Id.ToString(),
+            Id = identifier,
+            ClientId = identifier,
             Content = source.Content,
             Sender = MapSender(source.Role),
             Timestamp = source.Timestamp,
@@ -530,7 +538,8 @@ public class ChatService : IChatService
             FileOperation = fileOperation,
             SearchResults = new List<SearchResultData>(),
             IsProcessing = source.IsProcessing,
-            ProcessingType = ProcessingType.None
+            ProcessingType = ProcessingType.None,
+            IsPending = false
         };
     }
 

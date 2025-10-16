@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using ObsidianAI.Application.Contracts;
 using ObsidianAI.Domain.Entities;
 using ObsidianAI.Domain.Models;
@@ -22,18 +23,21 @@ public class StreamChatUseCase
     private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
+    private readonly ILogger<StreamChatUseCase> _logger;
 
     public StreamChatUseCase(
         IAIAgentFactory agentFactory,
         Domain.Services.IFileOperationExtractor extractor,
-        IConversationRepository conversationRepository,
-        IMessageRepository messageRepository,
-        Application.Services.IMcpClientProvider? mcpClientProvider = null)
+    IConversationRepository conversationRepository,
+    IMessageRepository messageRepository,
+    ILogger<StreamChatUseCase>? logger = null,
+    Application.Services.IMcpClientProvider? mcpClientProvider = null)
     {
         _agentFactory = agentFactory;
         _extractor = extractor;
         _conversationRepository = conversationRepository;
-        _messageRepository = messageRepository;
+    _messageRepository = messageRepository;
+    _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamChatUseCase>.Instance;
         _mcpClientProvider = mcpClientProvider;
     }
 
@@ -61,6 +65,13 @@ public class StreamChatUseCase
         var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
         var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
 
+        var initialMetadataPayload = JsonSerializer.Serialize(new
+        {
+            conversationId = conversation.Id,
+            userMessageId = userMessage.Id
+        });
+        yield return ChatStreamEvent.MetadataEvent(initialMetadataPayload);
+
         IEnumerable<object>? tools = null;
         if (_mcpClientProvider != null)
         {
@@ -87,7 +98,7 @@ public class StreamChatUseCase
 
         var finalResponse = responseBuilder.ToString();
         var fileOperation = _extractor.Extract(finalResponse);
-        var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, finalResponse, fileOperation, ct).ConfigureAwait(false);
+    var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, finalResponse, fileOperation, ct).ConfigureAwait(false);
 
         await UpdateConversationMetadataAsync(conversation.Id, persistenceContext.TitleSource ?? input.Message, ct).ConfigureAwait(false);
 
@@ -144,7 +155,14 @@ public class StreamChatUseCase
             IsProcessing = false
         };
 
-        await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        try
+        {
+            await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist user message {MessageId}", message.Id);
+        }
         return message;
     }
 
@@ -172,7 +190,14 @@ public class StreamChatUseCase
             };
         }
 
-        await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        try
+        {
+            await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist assistant message {MessageId}", message.Id);
+        }
         return message;
     }
 

@@ -26,7 +26,15 @@
         <section class="sidebar-content" aria-live="polite">
             @if (IsLoading)
             {
-                <div class="sidebar-empty">Loading conversations…</div>
+                <div class="sidebar-skeleton" role="status" aria-label="Loading conversations">
+                    @for (var i = 0; i < 4; i++)
+                    {
+                        <div class="sidebar-skeleton-item">
+                            <div class="sidebar-skeleton-title"></div>
+                            <div class="sidebar-skeleton-meta"></div>
+                        </div>
+                    }
+                </div>
             }
             else if (!FilteredConversations.Any())
             {
@@ -49,20 +57,22 @@
                                     <span>@conversation.Provider</span>
                                 </div>
                             </button>
-                            <button type="button"
-                                    class="sidebar-archive"
-                                    title="Archive conversation"
-                                    @onclick="() => ArchiveConversation(conversation.Id)"
-                                    @onclick:stopPropagation="true">
-                                Archive
-                            </button>
-                            <button type="button"
-                                    class="sidebar-delete"
-                                    title="Delete conversation"
-                                    @onclick="() => DeleteConversation(conversation.Id)"
-                                    @onclick:stopPropagation="true">
-                                Delete
-                            </button>
+                            <div class="sidebar-item-actions">
+                                <button type="button"
+                                        class="sidebar-archive"
+                                        title="Archive conversation"
+                                        @onclick="() => ArchiveConversation(conversation.Id)"
+                                        @onclick:stopPropagation="true">
+                                    Archive
+                                </button>
+                                <button type="button"
+                                        class="sidebar-delete"
+                                        title="Delete conversation"
+                                        @onclick="() => DeleteConversation(conversation.Id)"
+                                        @onclick:stopPropagation="true">
+                                    Delete
+                                </button>
+                            </div>
                         </li>
                     }
                 </ul>

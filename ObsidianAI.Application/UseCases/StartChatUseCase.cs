@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using ObsidianAI.Application.Contracts;
 using ObsidianAI.Domain.Entities;
 using ObsidianAI.Domain.Models;
@@ -19,19 +20,22 @@ public class StartChatUseCase
     private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
+    private readonly ILogger<StartChatUseCase> _logger;
 
     public StartChatUseCase(
         IAIAgentFactory agentFactory,
         Domain.Services.IFileOperationExtractor extractor,
         IConversationRepository conversationRepository,
         IMessageRepository messageRepository,
-        Application.Services.IMcpClientProvider? mcpClientProvider = null)
+        Application.Services.IMcpClientProvider? mcpClientProvider = null,
+        ILogger<StartChatUseCase>? logger = null)
     {
         _agentFactory = agentFactory;
         _extractor = extractor;
         _conversationRepository = conversationRepository;
         _messageRepository = messageRepository;
         _mcpClientProvider = mcpClientProvider;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StartChatUseCase>.Instance;
     }
 
     /// <summary>
@@ -117,7 +121,14 @@ public class StartChatUseCase
             IsProcessing = false
         };
 
-        await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        try
+        {
+            await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist user message {MessageId}", message.Id);
+        }
         return message;
     }
 
@@ -145,7 +156,14 @@ public class StartChatUseCase
             };
         }
 
-        await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        try
+        {
+            await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist assistant message {MessageId}", message.Id);
+        }
         return message;
     }
 
@@ -168,18 +186,18 @@ public class StartChatUseCase
 
     private static string CreateTitle(string? titleSource)
     {
-        if (string.IsNullOrWhiteSpace(titleSource))
+        if (!string.IsNullOrWhiteSpace(titleSource))
         {
-            return "New Conversation";
+            var trimmed = titleSource.Trim();
+            const int MaxLength = 80;
+            if (trimmed.Length <= MaxLength)
+            {
+                return trimmed;
+            }
+
+            return trimmed.Substring(0, MaxLength) + "…";
         }
 
-        var trimmed = titleSource.Trim();
-        const int MaxLength = 80;
-        if (trimmed.Length <= MaxLength)
-        {
-            return trimmed;
-        }
-
-        return trimmed.Substring(0, MaxLength) + "…";
+        return $"Chat - {DateTime.UtcNow:MMM d, yyyy HH:mm}";
     }
 }

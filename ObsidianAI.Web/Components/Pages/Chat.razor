@@ -114,7 +114,7 @@
                 if (currentAiMessage != null)
                 {
                     // Find the message in the list
-                    var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                    var index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
                     if (index >= 0)
                     {
                         // Create updated message (remove processing indicator on first token)
@@ -168,7 +168,7 @@
                             var toolName = toolProp.GetString();
                             
                             // Update the AI message with tool call status
-                            var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                            var index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
                             if (index >= 0)
                             {
                                 currentAiMessage = currentAiMessage with
@@ -200,7 +200,7 @@
                     // Parse the message for action cards or search results
                     await ParseResponseForComponents(finalMessage);
 
-                    var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                    var index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
                     if (index >= 0)
                     {
                         currentAiMessage = currentAiMessage with { IsProcessing = false };
@@ -230,7 +230,7 @@
             {
                 if (currentAiMessage != null)
                 {
-                    var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                    var index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
                     if (index >= 0)
                     {
                         currentAiMessage = currentAiMessage with
@@ -285,6 +285,7 @@
             var conversationId = await ChatService.CreateConversationAsync();
             pendingAssistantMessageClientId = null;
             pendingUserMessageClientId = null;
+            AddOptimisticConversationSummary(conversationId);
             await LoadConversationAsync(conversationId);
         }
         catch (Exception ex)
@@ -361,6 +362,15 @@
                 detail.Provider,
                 detail.ModelName,
                 detail.Messages.Count);
+
+            var summary = new ConversationSummary(
+                detail.Id,
+                detail.Title,
+                detail.UpdatedAt,
+                detail.Messages.Count,
+                detail.Provider,
+                detail.ModelName);
+            UpsertConversationSummary(summary);
             await RefreshConversationListAsync();
             UpdateConversationRoute(detail.Id);
             await ScrollToBottom();
@@ -382,32 +392,38 @@
 
         await EnsureConversationInitializedAsync();
 
+        var userClientId = Guid.NewGuid().ToString();
         var userMessage = new ChatMessage
         {
+            ClientId = userClientId,
             Content = currentMessage,
             Sender = MessageSender.User,
-            Timestamp = DateTime.UtcNow
+            Timestamp = DateTime.UtcNow,
+            IsPending = true
         };
 
         conversationHistory.Add(userMessage);
-        pendingUserMessageClientId = userMessage.Id;
+        pendingUserMessageClientId = userClientId;
         var messageToSend = currentMessage;
         currentMessage = string.Empty;
         isProcessing = true;
         isStreaming = true;
 
         // Create a placeholder AI message for streaming
+        var assistantClientId = Guid.NewGuid().ToString();
         currentAiMessage = new ChatMessage
         {
+            ClientId = assistantClientId,
             Content = string.Empty,
             Sender = MessageSender.AI,
             Timestamp = DateTime.UtcNow,
             IsProcessing = true,
-            ProcessingType = ProcessingType.Thinking
+            ProcessingType = ProcessingType.Thinking,
+            IsPending = true
         };
 
         conversationHistory.Add(currentAiMessage);
-        pendingAssistantMessageClientId = currentAiMessage.Id;
+        pendingAssistantMessageClientId = assistantClientId;
         StateHasChanged();
         await ScrollToBottom();
 
@@ -428,7 +444,7 @@
             // Handle connection errors
             if (currentAiMessage != null)
             {
-                var index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+                var index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
                 if (index >= 0)
                 {
                     currentAiMessage = currentAiMessage with
@@ -624,7 +640,7 @@
             return;
         }
 
-        await InvokeAsync(async () =>
+        await InvokeAsync(() =>
         {
             var conversationId = metadata.ConversationId;
             if (!currentConversationId.HasValue || currentConversationId != conversationId)
@@ -633,47 +649,8 @@
                 UpdateConversationRoute(conversationId);
             }
 
-            if (!string.IsNullOrEmpty(pendingUserMessageClientId))
-            {
-                var userIndex = conversationHistory.FindLastIndex(m => m.Id == pendingUserMessageClientId);
-                if (userIndex >= 0)
-                {
-                    conversationHistory[userIndex] = conversationHistory[userIndex] with
-                    {
-                        Id = metadata.UserMessageId.ToString()
-                    };
-                }
-                pendingUserMessageClientId = null;
-            }
-
-            if (!string.IsNullOrEmpty(pendingAssistantMessageClientId))
-            {
-                var assistantIndex = conversationHistory.FindLastIndex(m => m.Id == pendingAssistantMessageClientId);
-                if (assistantIndex >= 0)
-                {
-                    var updatedMessage = conversationHistory[assistantIndex] with
-                    {
-                        Id = metadata.AssistantMessageId.ToString()
-                    };
-
-                    if (metadata.FileOperation != null)
-                    {
-                        updatedMessage = updatedMessage with
-                        {
-                            FileOperation = new FileOperationData
-                            {
-                                Action = metadata.FileOperation.Action,
-                                FilePath = metadata.FileOperation.FilePath
-                            }
-                        };
-                    }
-
-                    conversationHistory[assistantIndex] = updatedMessage;
-                    currentAiMessage = updatedMessage;
-                }
-
-                pendingAssistantMessageClientId = null;
-            }
+            PromoteUserMessage(metadata);
+            PromoteAssistantMessage(metadata);
 
             if (currentConversationMetadata != null)
             {
@@ -684,15 +661,85 @@
                 };
             }
 
-            await RefreshConversationListAsync();
+            UpdateCurrentConversationSummarySnapshot();
+            _ = RefreshConversationListAsync();
             StateHasChanged();
+            return Task.CompletedTask;
         });
+    }
+
+    private void AddOptimisticConversationSummary(Guid conversationId)
+    {
+        var provider = string.IsNullOrWhiteSpace(llmProvider) ? "Assistant" : llmProvider;
+        var summary = new ConversationSummary(
+            conversationId,
+            BuildDefaultConversationTitle(),
+            DateTime.UtcNow,
+            0,
+            provider,
+            currentConversationMetadata?.ModelName ?? string.Empty);
+
+        UpsertConversationSummary(summary);
+        StateHasChanged();
+    }
+
+    private void UpsertConversationSummary(ConversationSummary summary)
+    {
+        var existingIndex = conversationSummaries.FindIndex(c => c.Id == summary.Id);
+        if (existingIndex >= 0)
+        {
+            conversationSummaries[existingIndex] = summary;
+        }
+        else
+        {
+            conversationSummaries.Insert(0, summary);
+        }
+    }
+
+    private void UpdateCurrentConversationSummarySnapshot()
+    {
+        if (!currentConversationId.HasValue)
+        {
+            return;
+        }
+
+        var provider = currentConversationMetadata?.Provider ?? (string.IsNullOrWhiteSpace(llmProvider) ? "Assistant" : llmProvider);
+        var modelName = currentConversationMetadata?.ModelName ?? string.Empty;
+        var title = currentConversationMetadata?.Title ?? BuildDefaultConversationTitle();
+        var updatedAt = currentConversationMetadata?.UpdatedAt ?? DateTime.UtcNow;
+
+        var summary = new ConversationSummary(
+            currentConversationId.Value,
+            title,
+            updatedAt,
+            conversationHistory.Count,
+            provider,
+            modelName);
+
+        UpsertConversationSummary(summary);
+    }
+
+    private static string BuildDefaultConversationTitle(string? source = null)
+    {
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            var trimmed = source.Trim();
+            const int MaxLength = 80;
+            if (trimmed.Length <= MaxLength)
+            {
+                return trimmed;
+            }
+
+            return trimmed.Substring(0, MaxLength) + "…";
+        }
+
+        return $"Chat - {DateTime.UtcNow:MMM d, yyyy HH:mm}";
     }
 
     private void UpdateConversationRoute(Guid conversationId)
     {
         var target = NavigationManager.GetUriWithQueryParameter("conversationId", conversationId.ToString());
-        NavigationManager.NavigateTo(target, replace: true);
+        NavigationManager.NavigateTo(target);
     }
 
     private void ClearConversationRoute()
@@ -704,7 +751,7 @@
         }
 
         var baseUri = uri.GetLeftPart(UriPartial.Path);
-        NavigationManager.NavigateTo(baseUri, replace: true);
+        NavigationManager.NavigateTo(baseUri);
     }
 
     private static string CreateExportFileName(string? title, Guid conversationId)
@@ -1039,7 +1086,7 @@
         var index = -1;
         if (currentAiMessage != null)
         {
-            index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+            index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
         }
         if (index < 0)
         {
@@ -1056,7 +1103,7 @@
             };
             conversationHistory[index] = updated;
 
-            if (currentAiMessage != null && currentAiMessage.Id == msg.Id)
+            if (currentAiMessage != null && currentAiMessage.ClientId == msg.ClientId)
             {
                 currentAiMessage = updated;
             }
@@ -1070,7 +1117,7 @@
         var index = -1;
         if (currentAiMessage != null)
         {
-            index = conversationHistory.FindLastIndex(m => m.Id == currentAiMessage.Id);
+            index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
         }
         if (index < 0)
         {
@@ -1087,7 +1134,7 @@
             };
             conversationHistory[index] = updated;
 
-            if (currentAiMessage != null && currentAiMessage.Id == msg.Id)
+            if (currentAiMessage != null && currentAiMessage.ClientId == msg.ClientId)
             {
                 currentAiMessage = updated;
             }
@@ -1215,7 +1262,88 @@
         }
     }
 
-    private sealed record StreamingMetadata(Guid ConversationId, Guid UserMessageId, Guid AssistantMessageId, StreamingFileOperation? FileOperation);
+    private void PromoteUserMessage(StreamingMetadata metadata)
+    {
+        if (!metadata.UserMessageId.HasValue || metadata.UserMessageId.Value == Guid.Empty)
+        {
+            return;
+        }
+
+        var serverId = metadata.UserMessageId.Value.ToString();
+        var clientId = pendingUserMessageClientId;
+        var userIndex = -1;
+
+        if (!string.IsNullOrEmpty(clientId))
+        {
+            userIndex = conversationHistory.FindLastIndex(m => m.ClientId == clientId);
+        }
+
+        if (userIndex < 0)
+        {
+            userIndex = conversationHistory.FindLastIndex(m => m.IsPending && m.Sender == MessageSender.User);
+        }
+
+        if (userIndex >= 0)
+        {
+            conversationHistory[userIndex] = conversationHistory[userIndex] with
+            {
+                Id = serverId,
+                IsPending = false
+            };
+        }
+
+        pendingUserMessageClientId = null;
+    }
+
+    private void PromoteAssistantMessage(StreamingMetadata metadata)
+    {
+        if (!metadata.AssistantMessageId.HasValue || metadata.AssistantMessageId.Value == Guid.Empty)
+        {
+            return;
+        }
+
+        var serverId = metadata.AssistantMessageId.Value.ToString();
+        var clientId = pendingAssistantMessageClientId;
+        var assistantIndex = -1;
+
+        if (!string.IsNullOrEmpty(clientId))
+        {
+            assistantIndex = conversationHistory.FindLastIndex(m => m.ClientId == clientId);
+        }
+
+        if (assistantIndex < 0)
+        {
+            assistantIndex = conversationHistory.FindLastIndex(m => m.IsPending && m.Sender == MessageSender.AI);
+        }
+
+        if (assistantIndex >= 0)
+        {
+            var updatedMessage = conversationHistory[assistantIndex] with
+            {
+                Id = serverId,
+                IsPending = false
+            };
+
+            if (metadata.FileOperation != null)
+            {
+                updatedMessage = updatedMessage with
+                {
+                    FileOperation = new FileOperationData
+                    {
+                        Action = metadata.FileOperation.Action,
+                        FilePath = metadata.FileOperation.FilePath
+                    }
+                };
+            }
+
+            conversationHistory[assistantIndex] = updatedMessage;
+            currentAiMessage = updatedMessage;
+        }
+
+        pendingAssistantMessageClientId = null;
+    }
+
+    private sealed record StreamingMetadata(Guid ConversationId, Guid? UserMessageId, Guid? AssistantMessageId, StreamingFileOperation? FileOperation);
 
     private sealed record StreamingFileOperation(string Action, string FilePath);
 }

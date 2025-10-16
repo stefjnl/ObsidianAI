@@ -46,18 +46,18 @@ public sealed class CreateConversationUseCase
 
     private static string CreateTitle(string? titleSource)
     {
-        if (string.IsNullOrWhiteSpace(titleSource))
+        if (!string.IsNullOrWhiteSpace(titleSource))
         {
-            return "New Conversation";
+            var trimmed = titleSource.Trim();
+            const int MaxLength = 80;
+            if (trimmed.Length <= MaxLength)
+            {
+                return trimmed;
+            }
+
+            return trimmed.Substring(0, MaxLength) + "…";
         }
 
-        var trimmed = titleSource.Trim();
-        const int MaxLength = 80;
-        if (trimmed.Length <= MaxLength)
-        {
-            return trimmed;
-        }
-
-        return trimmed.Substring(0, MaxLength) + "…";
+        return $"Chat - {DateTime.UtcNow:MMM d, yyyy HH:mm}";
     }
 }

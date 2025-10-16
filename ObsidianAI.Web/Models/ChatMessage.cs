@@ -7,10 +7,15 @@ namespace ObsidianAI.Web.Models
     /// </summary>
     public record ChatMessage
     {
-        /// <summary>
-        /// Unique identifier for the message
-        /// </summary>
-        public string Id { get; init; } = Guid.NewGuid().ToString();
+    /// <summary>
+    /// Unique identifier assigned by the server once persisted.
+    /// </summary>
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Client-generated identifier used for optimistic UI updates prior to persistence.
+    /// </summary>
+    public string ClientId { get; init; } = Guid.NewGuid().ToString();
         
         /// <summary>
         /// The content of the message
@@ -54,6 +59,11 @@ namespace ObsidianAI.Web.Models
         /// Type of processing being performed
         /// </summary>
         public ProcessingType ProcessingType { get; init; }
+
+        /// <summary>
+        /// Indicates the message is awaiting server confirmation.
+        /// </summary>
+        public bool IsPending { get; init; }
     }
 
     /// <summary>
