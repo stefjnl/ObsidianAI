@@ -38,6 +38,12 @@ namespace ObsidianAI.Api.Streaming
                         await context.Response.WriteAsync($"event: tool_call\ndata: {update.ToolName}\n\n", ct);
                         await context.Response.Body.FlushAsync(ct);
                     }
+                    else if (update.Kind == ChatStreamEventKind.Metadata && !string.IsNullOrEmpty(update.Metadata))
+                    {
+                        logger.LogInformation("Sending metadata event: {Payload}", update.Metadata);
+                        await context.Response.WriteAsync($"event: metadata\ndata: {update.Metadata}\n\n", ct);
+                        await context.Response.Body.FlushAsync(ct);
+                    }
                     else if (update.Kind == ChatStreamEventKind.Text && !string.IsNullOrEmpty(update.Text))
                     {
                         var escapedContent = update.Text.Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");

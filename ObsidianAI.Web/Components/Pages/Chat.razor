@@ -6,15 +6,38 @@
 @using ObsidianAI.Web.Components.Shared
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Text.RegularExpressions
+@using System.Text.Json
 @using Microsoft.Extensions.Logging
+@using Microsoft.AspNetCore.WebUtilities
+@using System.IO
+@using System.Linq
 @inject IChatService ChatService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
 @inject ILogger<Chat> Logger
 
-<ChatHeader OnVaultClick="OpenVault" OnSettingsClick="OpenSettings" OnHistoryClick="ShowHistory" />
+<ChatHeader Conversation="currentConversationMetadata"
+            IsExportEnabled="@currentConversationId.HasValue"
+            OnTitleChanged="HandleConversationTitleChangedAsync"
+            OnExport="HandleExportConversationAsync"
+            OnVaultClick="OpenVault"
+            OnSettingsClick="OpenSettings"
+            OnHistoryClick="ShowHistory" />
 
 <PrivacyWarning IsVisible="@isOpenRouter" />
+
+@if (isSidebarOpen)
+{
+    <ConversationSidebar
+        Conversations="conversationSummaries"
+        SelectedConversationId="currentConversationId"
+        IsLoading="isLoadingConversations"
+        OnConversationSelected="HandleConversationSelectedAsync"
+        OnClose="CloseSidebar"
+        OnNewConversation="HandleNewConversationAsync"
+        OnDeleteConversation="HandleDeleteConversationAsync"
+        OnArchiveConversation="HandleArchiveConversationAsync" />
+}
 
 <ChatArea Messages="@conversationHistory"
           OnActionConfirmed="HandleActionConfirmed"
@@ -40,6 +63,13 @@
     private bool isOpenRouter = false;
     private int tokenBatchCount = 0;
     private const int TokenBatchSize = 3;
+    private Guid? currentConversationId;
+    private ConversationMetadata? currentConversationMetadata;
+    private List<ConversationSummary> conversationSummaries = new();
+    private bool isSidebarOpen;
+    private bool isLoadingConversations;
+    private string? pendingUserMessageClientId;
+    private string? pendingAssistantMessageClientId;
     private static readonly Regex FileOpPattern1 = new(
         @"(?i)(append|create|write|modify|patch|delete)\s+to\s+file:\s*[`""']?([^`""'\n]+\.md)[`""']?\s+with\s+content:\s*[""']([^""'\n]+)[""']",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
@@ -58,6 +88,8 @@
         await FetchLlmProvider();
         await InitializeSignalR();
         await LoadQuickActions();
+        await RefreshConversationListAsync();
+        await TryLoadConversationFromQueryAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -112,6 +144,11 @@
                     }
                 }
             });
+        });
+
+        hubConnection.On<string>("Metadata", metadataJson =>
+        {
+            _ = HandleMetadataAsync(metadataJson);
         });
 
         hubConnection.On<object>("StatusUpdate", (update) =>
@@ -236,10 +273,114 @@
         StateHasChanged();
     }
 
+    private async Task EnsureConversationInitializedAsync()
+    {
+        if (currentConversationId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            var conversationId = await ChatService.CreateConversationAsync();
+            pendingAssistantMessageClientId = null;
+            pendingUserMessageClientId = null;
+            await LoadConversationAsync(conversationId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to initialize conversation");
+            throw;
+        }
+    }
+
+    private async Task RefreshConversationListAsync()
+    {
+        try
+        {
+            isLoadingConversations = true;
+            var summaries = await ChatService.ListConversationsAsync();
+            conversationSummaries = summaries?.ToList() ?? new List<ConversationSummary>();
+
+            if (currentConversationId.HasValue && currentConversationMetadata != null)
+            {
+                var summary = conversationSummaries.FirstOrDefault(c => c.Id == currentConversationId.Value);
+                if (summary != null)
+                {
+                    currentConversationMetadata = currentConversationMetadata with
+                    {
+                        Title = summary.Title,
+                        UpdatedAt = summary.UpdatedAt,
+                        MessageCount = summary.MessageCount,
+                        Provider = summary.Provider,
+                        ModelName = summary.ModelName
+                    };
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load conversation summaries");
+        }
+        finally
+        {
+            isLoadingConversations = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TryLoadConversationFromQueryAsync()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (string.IsNullOrEmpty(uri.Query))
+        {
+            return;
+        }
+
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("conversationId", out var conversationValues) &&
+            Guid.TryParse(conversationValues.FirstOrDefault(), out var conversationId))
+        {
+            await LoadConversationAsync(conversationId);
+        }
+    }
+
+    private async Task LoadConversationAsync(Guid conversationId)
+    {
+        try
+        {
+            var detail = await ChatService.LoadConversationAsync(conversationId);
+            currentConversationId = detail.Id;
+            conversationHistory = detail.Messages.ToList();
+            currentConversationMetadata = new ConversationMetadata(
+                detail.Id,
+                detail.Title,
+                detail.CreatedAt,
+                detail.UpdatedAt,
+                detail.IsArchived,
+                detail.Provider,
+                detail.ModelName,
+                detail.Messages.Count);
+            await RefreshConversationListAsync();
+            UpdateConversationRoute(detail.Id);
+            await ScrollToBottom();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load conversation {ConversationId}", conversationId);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
     private async Task SendMessage()
     {
         if (string.IsNullOrWhiteSpace(currentMessage) || isProcessing || isStreaming)
             return;
+
+        await EnsureConversationInitializedAsync();
 
         var userMessage = new ChatMessage
         {
@@ -249,6 +390,7 @@
         };
 
         conversationHistory.Add(userMessage);
+        pendingUserMessageClientId = userMessage.Id;
         var messageToSend = currentMessage;
         currentMessage = string.Empty;
         isProcessing = true;
@@ -265,6 +407,7 @@
         };
 
         conversationHistory.Add(currentAiMessage);
+        pendingAssistantMessageClientId = currentAiMessage.Id;
         StateHasChanged();
         await ScrollToBottom();
 
@@ -273,7 +416,7 @@
             if (hubConnection != null && hubConnection.State == HubConnectionState.Connected)
             {
                 // Send message via SignalR for streaming
-                await hubConnection.SendAsync("StreamMessage", messageToSend, conversationHistory);
+                await hubConnection.SendAsync("StreamMessage", messageToSend, currentConversationId?.ToString(), conversationHistory);
             }
             else
             {
@@ -317,6 +460,266 @@
         return Task.CompletedTask;
     }
 
+    private async Task HandleConversationSelectedAsync(Guid conversationId)
+    {
+        isSidebarOpen = false;
+        if (currentConversationId == conversationId)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        if (conversationId == Guid.Empty)
+        {
+            await HandleNewConversationAsync();
+            return;
+        }
+
+        await LoadConversationAsync(conversationId);
+    }
+
+    private async Task HandleNewConversationAsync()
+    {
+        try
+        {
+            var conversationId = await ChatService.CreateConversationAsync();
+            pendingAssistantMessageClientId = null;
+            pendingUserMessageClientId = null;
+            isSidebarOpen = false;
+            await LoadConversationAsync(conversationId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to create new conversation");
+        }
+    }
+
+    private async Task HandleDeleteConversationAsync(Guid conversationId)
+    {
+        try
+        {
+            await ChatService.DeleteConversationAsync(conversationId);
+            if (currentConversationId == conversationId)
+            {
+                currentConversationId = null;
+                conversationHistory.Clear();
+                currentConversationMetadata = null;
+                ClearConversationRoute();
+            }
+            await RefreshConversationListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete conversation {ConversationId}", conversationId);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleArchiveConversationAsync(Guid conversationId)
+    {
+        try
+        {
+            var metadata = await ChatService.ArchiveConversationAsync(conversationId);
+            await RefreshConversationListAsync();
+
+            if (currentConversationId == conversationId)
+            {
+                currentConversationId = null;
+                currentConversationMetadata = null;
+                conversationHistory.Clear();
+                ClearConversationRoute();
+            }
+            else if (metadata != null && currentConversationMetadata?.Id == conversationId)
+            {
+                currentConversationMetadata = metadata;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to archive conversation {ConversationId}", conversationId);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleConversationTitleChangedAsync(string newTitle)
+    {
+        if (!currentConversationId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            var updated = await ChatService.UpdateConversationAsync(currentConversationId.Value, newTitle, null);
+            if (updated != null)
+            {
+                currentConversationMetadata = updated;
+                await RefreshConversationListAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to update conversation title for {ConversationId}", currentConversationId);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExportConversationAsync()
+    {
+        if (!currentConversationId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            var exportContent = await ChatService.ExportConversationAsync(currentConversationId.Value);
+            if (string.IsNullOrWhiteSpace(exportContent))
+            {
+                return;
+            }
+
+            var fileName = CreateExportFileName(currentConversationMetadata?.Title, currentConversationId.Value);
+            await jsRuntime.InvokeVoidAsync("downloadFile", fileName, "application/json", exportContent);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to export conversation {ConversationId}", currentConversationId);
+        }
+    }
+
+    private void CloseSidebar()
+    {
+        isSidebarOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleMetadataAsync(string metadataJson)
+    {
+        StreamingMetadata? metadata = null;
+        try
+        {
+            metadata = JsonSerializer.Deserialize<StreamingMetadata>(metadataJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch (JsonException ex)
+        {
+            Logger.LogError(ex, "Invalid metadata payload: {Metadata}", metadataJson);
+            return;
+        }
+
+        if (metadata == null)
+        {
+            return;
+        }
+
+        await InvokeAsync(async () =>
+        {
+            var conversationId = metadata.ConversationId;
+            if (!currentConversationId.HasValue || currentConversationId != conversationId)
+            {
+                currentConversationId = conversationId;
+                UpdateConversationRoute(conversationId);
+            }
+
+            if (!string.IsNullOrEmpty(pendingUserMessageClientId))
+            {
+                var userIndex = conversationHistory.FindLastIndex(m => m.Id == pendingUserMessageClientId);
+                if (userIndex >= 0)
+                {
+                    conversationHistory[userIndex] = conversationHistory[userIndex] with
+                    {
+                        Id = metadata.UserMessageId.ToString()
+                    };
+                }
+                pendingUserMessageClientId = null;
+            }
+
+            if (!string.IsNullOrEmpty(pendingAssistantMessageClientId))
+            {
+                var assistantIndex = conversationHistory.FindLastIndex(m => m.Id == pendingAssistantMessageClientId);
+                if (assistantIndex >= 0)
+                {
+                    var updatedMessage = conversationHistory[assistantIndex] with
+                    {
+                        Id = metadata.AssistantMessageId.ToString()
+                    };
+
+                    if (metadata.FileOperation != null)
+                    {
+                        updatedMessage = updatedMessage with
+                        {
+                            FileOperation = new FileOperationData
+                            {
+                                Action = metadata.FileOperation.Action,
+                                FilePath = metadata.FileOperation.FilePath
+                            }
+                        };
+                    }
+
+                    conversationHistory[assistantIndex] = updatedMessage;
+                    currentAiMessage = updatedMessage;
+                }
+
+                pendingAssistantMessageClientId = null;
+            }
+
+            if (currentConversationMetadata != null)
+            {
+                currentConversationMetadata = currentConversationMetadata with
+                {
+                    UpdatedAt = DateTime.UtcNow,
+                    MessageCount = conversationHistory.Count
+                };
+            }
+
+            await RefreshConversationListAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void UpdateConversationRoute(Guid conversationId)
+    {
+        var target = NavigationManager.GetUriWithQueryParameter("conversationId", conversationId.ToString());
+        NavigationManager.NavigateTo(target, replace: true);
+    }
+
+    private void ClearConversationRoute()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (string.IsNullOrEmpty(uri.Query))
+        {
+            return;
+        }
+
+        var baseUri = uri.GetLeftPart(UriPartial.Path);
+        NavigationManager.NavigateTo(baseUri, replace: true);
+    }
+
+    private static string CreateExportFileName(string? title, Guid conversationId)
+    {
+        var sanitizedTitle = SanitizeFileName(string.IsNullOrWhiteSpace(title) ? "conversation" : title);
+        return $"{sanitizedTitle}-{conversationId}.json";
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var cleaned = new string(name.Select(ch => invalidChars.Contains(ch) ? '-' : ch).ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) ? "conversation" : cleaned;
+    }
+
     private async Task HandleActionConfirmed(string actionId)
     {
         // Find the message with this action card
@@ -337,6 +740,9 @@
         conversationHistory[index] = message;
         StateHasChanged();
 
+        await PersistMessageArtifactsAsync(message);
+
+        FileOperationData? persistedFileOperation = null;
         try
         {
             // Route single-file actions to Modify; multi-file to Reorganize
@@ -352,6 +758,14 @@
                 };
 
                 var response = await ChatService.ModifyAsync(modifyRequest);
+                if (response.Success && !string.IsNullOrWhiteSpace(response.FilePath))
+                {
+                    persistedFileOperation = new FileOperationData
+                    {
+                        Action = action.Operation,
+                        FilePath = response.FilePath
+                    };
+                }
 
                 // Update the action card with the result
                 message = message with
@@ -406,10 +820,11 @@
             conversationHistory[index] = message;
         }
 
+        await PersistMessageArtifactsAsync(message, persistedFileOperation);
         StateHasChanged();
     }
 
-    private Task HandleActionCancelled(string actionId)
+    private async Task HandleActionCancelled(string actionId)
     {
         // Find the message with this action card
         var message = conversationHistory.FirstOrDefault(m => m.ActionCard?.Id == actionId);
@@ -430,8 +845,9 @@
             conversationHistory[index] = message;
 
             StateHasChanged();
+
+            await PersistMessageArtifactsAsync(message);
         }
-        return Task.CompletedTask;
     }
 
     private async Task HandleActionEdit(string actionId)
@@ -448,6 +864,70 @@
         conversationHistory.Add(editMessage);
         StateHasChanged();
         await ScrollToBottom();
+    }
+
+    private async Task PersistMessageArtifactsAsync(ChatMessage message, FileOperationData? fileOperation = null)
+    {
+        if (!Guid.TryParse(message.Id, out var messageId))
+        {
+            return;
+        }
+
+        ActionCardUpdate? actionCardUpdate = null;
+        if (message.ActionCard != null)
+        {
+            var plannedActions = message.ActionCard.Actions
+                .Select((action, index) => new PlannedActionUpdate(
+                    null,
+                    action.Type.ToString(),
+                    string.IsNullOrWhiteSpace(action.Source) ? null : action.Source,
+                    string.IsNullOrWhiteSpace(action.Destination) ? null : action.Destination,
+                    string.IsNullOrWhiteSpace(action.Description) ? null : action.Description,
+                    action.Operation,
+                    string.IsNullOrWhiteSpace(action.Content) ? null : action.Content,
+                    index))
+                .ToList();
+
+            var operation = message.ActionCard.Actions.FirstOrDefault()?.Operation;
+            if (string.IsNullOrWhiteSpace(operation))
+            {
+                operation = message.ActionCard.OperationType.ToString().ToLowerInvariant();
+            }
+            var completedAt = message.ActionCard.Status is ActionCardStatus.Completed or ActionCardStatus.Failed or ActionCardStatus.Cancelled
+                ? DateTime.UtcNow
+                : (DateTime?)null;
+
+            actionCardUpdate = new ActionCardUpdate(
+                Guid.TryParse(message.ActionCard.Id, out var cardId) ? cardId : null,
+                message.ActionCard.Title,
+                message.ActionCard.Status.ToString(),
+                operation,
+                message.ActionCard.StatusMessage,
+                message.Timestamp,
+                completedAt,
+                plannedActions);
+        }
+
+        FileOperationUpdate? fileOperationUpdate = null;
+        if (fileOperation != null && !string.IsNullOrWhiteSpace(fileOperation.Action) && !string.IsNullOrWhiteSpace(fileOperation.FilePath))
+        {
+            fileOperationUpdate = new FileOperationUpdate(fileOperation.Action, fileOperation.FilePath, DateTime.UtcNow);
+        }
+
+        if (actionCardUpdate is null && fileOperationUpdate is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var update = new MessageArtifactsUpdate(actionCardUpdate, fileOperationUpdate);
+            await ChatService.UpdateMessageArtifactsAsync(messageId, update);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to persist artifacts for message {MessageId}", messageId);
+        }
     }
 
     private Task ParseResponseForComponents(string response)
@@ -717,15 +1197,25 @@
         StateHasChanged();
     }
 
-    private void ShowHistory()
+    private async Task ShowHistory()
     {
-        var historyMessage = new ChatMessage
-        {
-            Content = "History feature is coming soon!",
-            Sender = MessageSender.AI,
-            Timestamp = DateTime.UtcNow
-        };
-        conversationHistory.Add(historyMessage);
+        isSidebarOpen = true;
         StateHasChanged();
+
+        if (!isLoadingConversations)
+        {
+            try
+            {
+                await RefreshConversationListAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to refresh conversations when opening history");
+            }
+        }
     }
+
+    private sealed record StreamingMetadata(Guid ConversationId, Guid UserMessageId, Guid AssistantMessageId, StreamingFileOperation? FileOperation);
+
+    private sealed record StreamingFileOperation(string Action, string FilePath);
 }

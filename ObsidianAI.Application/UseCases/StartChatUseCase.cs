@@ -1,27 +1,36 @@
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using ObsidianAI.Application.Contracts;
+using ObsidianAI.Domain.Entities;
+using ObsidianAI.Domain.Models;
+using ObsidianAI.Domain.Ports;
+
 namespace ObsidianAI.Application.UseCases;
 
 /// <summary>
-/// Use case for starting a chat interaction with an AI agent and extracting any file operations.
+/// Use case for starting a chat interaction with an AI agent and persisting the resulting messages.
 /// </summary>
 public class StartChatUseCase
 {
-    private readonly ObsidianAI.Domain.Ports.IAIAgentFactory _agentFactory;
-    private readonly ObsidianAI.Domain.Services.IFileOperationExtractor _extractor;
-    private readonly ObsidianAI.Application.Services.IMcpClientProvider? _mcpClientProvider;
+    private readonly IAIAgentFactory _agentFactory;
+    private readonly Domain.Services.IFileOperationExtractor _extractor;
+    private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
+    private readonly IConversationRepository _conversationRepository;
+    private readonly IMessageRepository _messageRepository;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="StartChatUseCase"/> class.
-    /// </summary>
-    /// <param name="agentFactory">Factory to create AI agents.</param>
-    /// <param name="extractor">Extractor for file operations from response text.</param>
-    /// <param name="mcpClient">Optional MCP client for fetching available tools.</param>
     public StartChatUseCase(
-        ObsidianAI.Domain.Ports.IAIAgentFactory agentFactory,
-        ObsidianAI.Domain.Services.IFileOperationExtractor extractor,
-        ObsidianAI.Application.Services.IMcpClientProvider? mcpClientProvider = null)
+        IAIAgentFactory agentFactory,
+        Domain.Services.IFileOperationExtractor extractor,
+        IConversationRepository conversationRepository,
+        IMessageRepository messageRepository,
+        Application.Services.IMcpClientProvider? mcpClientProvider = null)
     {
         _agentFactory = agentFactory;
         _extractor = extractor;
+        _conversationRepository = conversationRepository;
+        _messageRepository = messageRepository;
         _mcpClientProvider = mcpClientProvider;
     }
 
@@ -30,17 +39,22 @@ public class StartChatUseCase
     /// </summary>
     /// <param name="input">The chat input containing the user's message.</param>
     /// <param name="instructions">Instructions for the AI agent.</param>
+    /// <param name="persistenceContext">Context required to persist conversation state.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The result containing response text and optional file operation.</returns>
-    public async Task<Contracts.StartChatResult> ExecuteAsync(ObsidianAI.Domain.Models.ChatInput input, string instructions, CancellationToken ct = default)
+    /// <returns>The result containing response text, message identifiers, and optional file operation.</returns>
+    public async Task<Contracts.StartChatResult> ExecuteAsync(ChatInput input, string instructions, ConversationPersistenceContext persistenceContext, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(persistenceContext);
+
         if (string.IsNullOrWhiteSpace(input.Message))
         {
             throw new ArgumentException("Message cannot be null or whitespace.", nameof(input));
         }
 
-        // Fetch MCP tools if available
-        System.Collections.Generic.IEnumerable<object>? tools = null;
+        var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
+        var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
+
+        IEnumerable<object>? tools = null;
         if (_mcpClientProvider != null)
         {
             var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
@@ -50,10 +64,122 @@ public class StartChatUseCase
             }
         }
 
-    var agent = await _agentFactory.CreateAgentAsync(instructions, tools, ct).ConfigureAwait(false);
+        var agent = await _agentFactory.CreateAgentAsync(instructions, tools, ct).ConfigureAwait(false);
         var responseText = await agent.SendAsync(input.Message, ct).ConfigureAwait(false);
         var fileOperation = _extractor.Extract(responseText);
 
-        return new Contracts.StartChatResult(responseText, fileOperation);
+        var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, responseText, fileOperation, ct).ConfigureAwait(false);
+
+        await UpdateConversationMetadataAsync(conversation.Id, persistenceContext.TitleSource ?? input.Message, ct).ConfigureAwait(false);
+
+        return new Contracts.StartChatResult(conversation.Id, userMessage.Id, assistantMessage.Id, responseText, fileOperation);
+    }
+
+    private async Task<Conversation> EnsureConversationAsync(ConversationPersistenceContext context, string titleSource, CancellationToken ct)
+    {
+        Conversation? conversation = null;
+        if (context.ConversationId.HasValue)
+        {
+            conversation = await _conversationRepository.GetByIdAsync(context.ConversationId.Value, includeMessages: false, ct).ConfigureAwait(false);
+        }
+
+        if (conversation != null)
+        {
+            return conversation;
+        }
+
+        var conversationId = context.ConversationId ?? Guid.NewGuid();
+        conversation = new Conversation
+        {
+            Id = conversationId,
+            UserId = context.UserId,
+            Title = CreateTitle(titleSource),
+            Provider = context.Provider,
+            ModelName = context.ModelName,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            IsArchived = false
+        };
+
+        await _conversationRepository.CreateAsync(conversation, ct).ConfigureAwait(false);
+        return conversation;
+    }
+
+    private async Task<Message> PersistUserMessageAsync(Guid conversationId, string content, CancellationToken ct)
+    {
+        var message = new Message
+        {
+            Id = Guid.NewGuid(),
+            ConversationId = conversationId,
+            Role = MessageRole.User,
+            Content = content,
+            Timestamp = DateTime.UtcNow,
+            IsProcessing = false
+        };
+
+        await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        return message;
+    }
+
+    private async Task<Message> PersistAssistantMessageAsync(Guid conversationId, string content, Domain.Models.FileOperation? fileOperation, CancellationToken ct)
+    {
+        var message = new Message
+        {
+            Id = Guid.NewGuid(),
+            ConversationId = conversationId,
+            Role = MessageRole.Assistant,
+            Content = content,
+            Timestamp = DateTime.UtcNow,
+            IsProcessing = false
+        };
+
+        if (fileOperation != null)
+        {
+            message.FileOperation = new FileOperationRecord
+            {
+                Id = Guid.NewGuid(),
+                MessageId = message.Id,
+                Action = fileOperation.Action,
+                FilePath = fileOperation.FilePath,
+                Timestamp = DateTime.UtcNow
+            };
+        }
+
+        await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
+        return message;
+    }
+
+    private async Task UpdateConversationMetadataAsync(Guid conversationId, string titleSource, CancellationToken ct)
+    {
+        var conversation = await _conversationRepository.GetByIdAsync(conversationId, includeMessages: false, ct).ConfigureAwait(false);
+        if (conversation == null)
+        {
+            return;
+        }
+
+        conversation.UpdatedAt = DateTime.UtcNow;
+        if (string.IsNullOrWhiteSpace(conversation.Title) || conversation.Title.Equals("New Conversation", StringComparison.Ordinal))
+        {
+            conversation.Title = CreateTitle(titleSource);
+        }
+
+        await _conversationRepository.UpdateAsync(conversation, ct).ConfigureAwait(false);
+    }
+
+    private static string CreateTitle(string? titleSource)
+    {
+        if (string.IsNullOrWhiteSpace(titleSource))
+        {
+            return "New Conversation";
+        }
+
+        var trimmed = titleSource.Trim();
+        const int MaxLength = 80;
+        if (trimmed.Length <= MaxLength)
+        {
+            return trimmed;
+        }
+
+        return trimmed.Substring(0, MaxLength) + "…";
     }
 }

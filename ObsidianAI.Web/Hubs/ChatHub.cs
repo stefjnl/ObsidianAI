@@ -21,7 +21,7 @@ public class ChatHub : Hub
         _httpClientFactory = httpClientFactory;
     }
 
-    public async Task StreamMessage(string message, List<ChatMessage> history)
+    public async Task StreamMessage(string message, string? conversationId, List<ChatMessage> history)
     {
         _logger.LogInformation("Processing streaming message: {Message}", message);
 
@@ -31,7 +31,8 @@ public class ChatHub : Hub
 
             var requestBody = new
             {
-                message = message,
+                message,
+                conversationId,
                 history = history?.Select(h => new { role = h.Sender == MessageSender.User ? "user" : "assistant", content = h.Content }).ToList()
             };
 
@@ -111,6 +112,11 @@ public class ChatHub : Hub
                     if (currentEvent == "tool_call")
                     {
                         await Clients.Caller.SendAsync("StatusUpdate", new { type = "tool_call", tool = data });
+                        currentEvent = null;
+                    }
+                    else if (currentEvent == "metadata")
+                    {
+                        await Clients.Caller.SendAsync("Metadata", data);
                         currentEvent = null;
                     }
                     else if (currentEvent == "error")
