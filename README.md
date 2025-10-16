@@ -1,5 +1,3 @@
-<img width="1398" height="1251" alt="image" src="https://github.com/user-attachments/assets/7faba114-667d-433e-b30c-865c6cb93ca5" />
-
 # ObsidianAI
 
 ObsidianAI is a .NET Aspire application designed to enhance your Obsidian vault experience with AI capabilities. It provides an intelligent assistant that can interact with your Obsidian notes, powered by Large Language Models (LLMs) and the Model Context Protocol (MCP).
@@ -19,12 +17,14 @@ ObsidianAI is a .NET Aspire application designed to enhance your Obsidian vault 
 
 ## Microsoft Agent Framework
 
-
 ### Package Dependencies
 The project uses the Microsoft Agent Framework through these NuGet packages:
 - **Microsoft.Agents.AI.OpenAI** (v1.0.0-preview.251009.1) - Main framework package
 - **Microsoft.Agents.AI** - Core agent functionality
 - **Microsoft.Agents.AI.Abstractions** - Framework abstractions
+
+<img width="1398" height="1251" alt="image" src="https://github.com/user-attachments/assets/7faba114-667d-433e-b30c-865c6cb93ca5" />
+<img width="1953" height="923" alt="image" src="https://github.com/user-attachments/assets/b01e517b-1be6-43fe-8016-c9b1fc9d8c9c" />
 
 ## Key Usage Locations
 
