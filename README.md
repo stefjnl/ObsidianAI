@@ -24,7 +24,13 @@ The project uses the Microsoft Agent Framework through these NuGet packages:
 - **Microsoft.Agents.AI.Abstractions** - Framework abstractions
 
 <img width="1398" height="1251" alt="image" src="https://github.com/user-attachments/assets/7faba114-667d-433e-b30c-865c6cb93ca5" />
+
+
+<img width="1959" height="1229" alt="image" src="https://github.com/user-attachments/assets/c2d04d56-c558-4455-8fbb-deeef0cec6f5" />
+
+
 <img width="1953" height="923" alt="image" src="https://github.com/user-attachments/assets/b01e517b-1be6-43fe-8016-c9b1fc9d8c9c" />
+
 
 ## Key Usage Locations
 
