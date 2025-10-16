@@ -133,7 +133,7 @@ public sealed class ListVaultContentsUseCase
                         // Determine if it's a folder (ends with /) or file
                         var isFolder = path.EndsWith("/", StringComparison.Ordinal);
                         var cleanPath = isFolder ? path.TrimEnd('/') : path;
-                        
+
                         // Build full path: if we're browsing a subfolder, prepend the parent path
                         var fullPath = BuildFullPath(parentPath, cleanPath);
                         var name = GetFileName(cleanPath);
@@ -212,7 +212,7 @@ public sealed class ListVaultContentsUseCase
             // Determine if it's a folder (ends with /) or file
             var isFolder = trimmedLine.EndsWith("/", StringComparison.Ordinal);
             var path = isFolder ? trimmedLine.TrimEnd('/') : trimmedLine;
-            
+
             // Build full path: if we're browsing a subfolder, prepend the parent path
             var fullPath = BuildFullPath(parentPath, path);
             var name = GetFileName(path);
