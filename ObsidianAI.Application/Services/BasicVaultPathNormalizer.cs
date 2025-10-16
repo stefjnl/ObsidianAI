@@ -19,14 +19,38 @@ namespace ObsidianAI.Application.Services
                 return string.Empty;
 
             var trimmed = userInputFileName.Trim();
+            if (trimmed.Length == 0)
+                return string.Empty;
 
-            // If file name lacks extension, add ".md"
-            if (!Path.HasExtension(trimmed))
+            var endsWithSlash = trimmed.EndsWith('/') || trimmed.EndsWith("\\");
+            var normalized = trimmed.Replace("\\", "/");
+            normalized = normalized.TrimEnd('/');
+
+            if (normalized.Length == 0)
             {
-                trimmed += ".md";
+                return string.Empty;
             }
 
-            return trimmed;
+            var lastSegment = normalized.Contains('/')
+                ? normalized[(normalized.LastIndexOf('/') + 1)..]
+                : normalized;
+
+            if (!endsWithSlash && !Path.HasExtension(lastSegment))
+            {
+                normalized += ".md";
+            }
+
+            return normalized;
+        }
+
+        /// <summary>
+        /// Generates a comparison key used when matching user input to vault paths.
+        /// </summary>
+        /// <param name="userInputFileName">Raw filename or path provided by the user or model.</param>
+        /// <returns>A normalized comparison key string.</returns>
+        public string CreateMatchKey(string userInputFileName)
+        {
+            return PathNormalizer.NormalizePath(userInputFileName ?? string.Empty);
         }
     }
 }

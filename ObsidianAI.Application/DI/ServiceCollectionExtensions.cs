@@ -18,6 +18,7 @@ namespace ObsidianAI.Application.DI
         {
             services.AddSingleton<ObsidianAI.Domain.Services.IFileOperationExtractor, RegexFileOperationExtractor>();
             services.AddSingleton<ObsidianAI.Domain.Services.IVaultPathNormalizer, BasicVaultPathNormalizer>();
+            services.AddSingleton<IVaultPathResolver, VaultPathResolver>();
 
             services.AddScoped<CreateConversationUseCase>();
             services.AddScoped<LoadConversationUseCase>();

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ObsidianAI.Application.Contracts;
+using ObsidianAI.Application.Services;
 using ObsidianAI.Domain.Entities;
 using ObsidianAI.Domain.Models;
 using ObsidianAI.Domain.Ports;
@@ -21,6 +22,7 @@ public class StreamChatUseCase
     private readonly IAIAgentFactory _agentFactory;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
     private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
+    private readonly IVaultPathResolver _vaultPathResolver;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
     private readonly ILogger<StreamChatUseCase> _logger;
@@ -28,16 +30,18 @@ public class StreamChatUseCase
     public StreamChatUseCase(
         IAIAgentFactory agentFactory,
         Domain.Services.IFileOperationExtractor extractor,
-    IConversationRepository conversationRepository,
-    IMessageRepository messageRepository,
-    ILogger<StreamChatUseCase>? logger = null,
-    Application.Services.IMcpClientProvider? mcpClientProvider = null)
+        IConversationRepository conversationRepository,
+        IMessageRepository messageRepository,
+        IVaultPathResolver vaultPathResolver,
+        ILogger<StreamChatUseCase>? logger = null,
+        Application.Services.IMcpClientProvider? mcpClientProvider = null)
     {
         _agentFactory = agentFactory;
         _extractor = extractor;
         _conversationRepository = conversationRepository;
-    _messageRepository = messageRepository;
-    _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamChatUseCase>.Instance;
+        _messageRepository = messageRepository;
+        _vaultPathResolver = vaultPathResolver ?? throw new ArgumentNullException(nameof(vaultPathResolver));
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamChatUseCase>.Instance;
         _mcpClientProvider = mcpClientProvider;
     }
 
@@ -98,7 +102,8 @@ public class StreamChatUseCase
 
         var finalResponse = responseBuilder.ToString();
         var fileOperation = _extractor.Extract(finalResponse);
-    var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, finalResponse, fileOperation, ct).ConfigureAwait(false);
+        var resolvedOperation = await ResolveFileOperationAsync(fileOperation, ct).ConfigureAwait(false);
+        var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, finalResponse, resolvedOperation, ct).ConfigureAwait(false);
 
         await UpdateConversationMetadataAsync(conversation.Id, persistenceContext.TitleSource ?? input.Message, ct).ConfigureAwait(false);
 
@@ -107,10 +112,27 @@ public class StreamChatUseCase
             conversationId = conversation.Id,
             userMessageId = userMessage.Id,
             assistantMessageId = assistantMessage.Id,
-            fileOperation = fileOperation == null ? null : new { fileOperation.Action, fileOperation.FilePath }
+            fileOperation = resolvedOperation == null ? null : new { resolvedOperation.Action, resolvedOperation.FilePath }
         });
 
         yield return ChatStreamEvent.MetadataEvent(metadataPayload);
+    }
+
+    private async Task<Domain.Models.FileOperation?> ResolveFileOperationAsync(Domain.Models.FileOperation? fileOperation, CancellationToken ct)
+    {
+        if (fileOperation is null || string.IsNullOrWhiteSpace(fileOperation.FilePath))
+        {
+            return fileOperation;
+        }
+
+        var resolvedPath = await _vaultPathResolver.ResolveAsync(fileOperation.FilePath, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(resolvedPath) || string.Equals(fileOperation.FilePath, resolvedPath, StringComparison.Ordinal))
+        {
+            return fileOperation;
+        }
+
+        _logger.LogDebug("Resolved vault path '{Original}' to '{Resolved}'", fileOperation.FilePath, resolvedPath);
+        return fileOperation with { FilePath = resolvedPath };
     }
 
     private async Task<Conversation> EnsureConversationAsync(ConversationPersistenceContext context, string titleSource, CancellationToken ct)

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ObsidianAI.Application.Contracts;
+using ObsidianAI.Application.Services;
 using ObsidianAI.Domain.Entities;
 using ObsidianAI.Domain.Models;
 using ObsidianAI.Domain.Ports;
@@ -18,6 +19,7 @@ public class StartChatUseCase
     private readonly IAIAgentFactory _agentFactory;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
     private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
+    private readonly IVaultPathResolver _vaultPathResolver;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
     private readonly ILogger<StartChatUseCase> _logger;
@@ -25,6 +27,7 @@ public class StartChatUseCase
     public StartChatUseCase(
         IAIAgentFactory agentFactory,
         Domain.Services.IFileOperationExtractor extractor,
+        IVaultPathResolver vaultPathResolver,
         IConversationRepository conversationRepository,
         IMessageRepository messageRepository,
         Application.Services.IMcpClientProvider? mcpClientProvider = null,
@@ -32,6 +35,7 @@ public class StartChatUseCase
     {
         _agentFactory = agentFactory;
         _extractor = extractor;
+        _vaultPathResolver = vaultPathResolver ?? throw new ArgumentNullException(nameof(vaultPathResolver));
         _conversationRepository = conversationRepository;
         _messageRepository = messageRepository;
         _mcpClientProvider = mcpClientProvider;
@@ -71,12 +75,30 @@ public class StartChatUseCase
         var agent = await _agentFactory.CreateAgentAsync(instructions, tools, ct).ConfigureAwait(false);
         var responseText = await agent.SendAsync(input.Message, ct).ConfigureAwait(false);
         var fileOperation = _extractor.Extract(responseText);
+        var resolvedOperation = await ResolveFileOperationAsync(fileOperation, ct).ConfigureAwait(false);
 
-        var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, responseText, fileOperation, ct).ConfigureAwait(false);
+        var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, responseText, resolvedOperation, ct).ConfigureAwait(false);
 
         await UpdateConversationMetadataAsync(conversation.Id, persistenceContext.TitleSource ?? input.Message, ct).ConfigureAwait(false);
 
-        return new Contracts.StartChatResult(conversation.Id, userMessage.Id, assistantMessage.Id, responseText, fileOperation);
+        return new Contracts.StartChatResult(conversation.Id, userMessage.Id, assistantMessage.Id, responseText, resolvedOperation);
+    }
+
+    private async Task<Domain.Models.FileOperation?> ResolveFileOperationAsync(Domain.Models.FileOperation? fileOperation, CancellationToken ct)
+    {
+        if (fileOperation is null || string.IsNullOrWhiteSpace(fileOperation.FilePath))
+        {
+            return fileOperation;
+        }
+
+        var resolvedPath = await _vaultPathResolver.ResolveAsync(fileOperation.FilePath, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(resolvedPath) || string.Equals(fileOperation.FilePath, resolvedPath, StringComparison.Ordinal))
+        {
+            return fileOperation;
+        }
+
+        _logger.LogDebug("Resolved vault path '{Original}' to '{Resolved}'", fileOperation.FilePath, resolvedPath);
+        return fileOperation with { FilePath = resolvedPath };
     }
 
     private async Task<Conversation> EnsureConversationAsync(ConversationPersistenceContext context, string titleSource, CancellationToken ct)
