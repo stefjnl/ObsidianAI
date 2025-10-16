@@ -33,12 +33,16 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
     }
 
     /// <inheritdoc />
-    public async Task<IChatAgent> CreateAgentAsync(string instructions, System.Collections.Generic.IEnumerable<object>? tools = null, CancellationToken cancellationToken = default)
+    public async Task<IChatAgent> CreateAgentAsync(
+        string instructions,
+        System.Collections.Generic.IEnumerable<object>? tools = null,
+        IAgentThreadProvider? threadProvider = null,
+        CancellationToken cancellationToken = default)
     {
         return ProviderName.Equals("LMStudio", StringComparison.OrdinalIgnoreCase)
-            ? await LmStudioChatAgent.CreateAsync(_options, instructions, tools, cancellationToken).ConfigureAwait(false)
+            ? await LmStudioChatAgent.CreateAsync(_options, instructions, tools, threadProvider, cancellationToken).ConfigureAwait(false)
             : ProviderName.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase)
-                ? await OpenRouterChatAgent.CreateAsync(_options, instructions, tools, cancellationToken).ConfigureAwait(false)
-                : await LmStudioChatAgent.CreateAsync(_options, instructions, tools, cancellationToken).ConfigureAwait(false);
+                ? await OpenRouterChatAgent.CreateAsync(_options, instructions, tools, threadProvider, cancellationToken).ConfigureAwait(false)
+                : await LmStudioChatAgent.CreateAsync(_options, instructions, tools, threadProvider, cancellationToken).ConfigureAwait(false);
     }
 }

@@ -19,11 +19,16 @@ namespace ObsidianAI.Infrastructure.LLM
         private readonly IChatClient _chatClient;
         private readonly string _instructions;
         private readonly ChatClientAgent _agent;
+    private readonly IAgentThreadProvider? _threadProvider;
 
         /// <summary>
         /// Private constructor - use CreateAsync factory method instead.
         /// </summary>
-        private OpenRouterChatAgent(IOptions<AppSettings> appOptions, string instructions, System.Collections.Generic.IEnumerable<object>? tools)
+        private OpenRouterChatAgent(
+            IOptions<AppSettings> appOptions,
+            string instructions,
+            System.Collections.Generic.IEnumerable<object>? tools,
+            IAgentThreadProvider? threadProvider)
         {
             var settings = appOptions.Value.LLM.OpenRouter;
             var endpoint = settings.Endpoint?.Trim() ?? "https://openrouter.ai/api/v1";
@@ -44,30 +49,53 @@ namespace ObsidianAI.Infrastructure.LLM
                 name: "OpenRouterAgent",
                 instructions: _instructions,
                 tools: aiTools);
+            _threadProvider = threadProvider;
         }
 
         /// <summary>
         /// Creates a new instance of the OpenRouterChatAgent with optional MCP tools.
         /// </summary>
-        public static Task<OpenRouterChatAgent> CreateAsync(IOptions<AppSettings> appOptions, string instructions, System.Collections.Generic.IEnumerable<object>? tools = null, CancellationToken ct = default)
+        public static Task<OpenRouterChatAgent> CreateAsync(
+            IOptions<AppSettings> appOptions,
+            string instructions,
+            System.Collections.Generic.IEnumerable<object>? tools = null,
+            IAgentThreadProvider? threadProvider = null,
+            CancellationToken ct = default)
         {
-            return Task.FromResult(new OpenRouterChatAgent(appOptions, instructions, tools));
+            return Task.FromResult(new OpenRouterChatAgent(appOptions, instructions, tools, threadProvider));
         }
 
         /// <inheritdoc />
-        public async Task<string> SendAsync(string message, CancellationToken ct = default)
+        public async Task<string> SendAsync(string message, string? threadId = null, CancellationToken ct = default)
         {
             if (message is null) throw new ArgumentNullException(nameof(message));
-            var response = await _agent.RunAsync(message).ConfigureAwait(false);
+            AgentThread? thread = null;
+            if (!string.IsNullOrEmpty(threadId) && _threadProvider is not null)
+            {
+                thread = await _threadProvider.GetThreadAsync(threadId, ct).ConfigureAwait(false);
+            }
+
+            var response = thread is not null
+            ? await _agent.RunAsync(message, thread, cancellationToken: ct).ConfigureAwait(false)
+            : await _agent.RunAsync(message, cancellationToken: ct).ConfigureAwait(false);
+
             return response?.Text ?? string.Empty;
         }
 
         /// <inheritdoc />
-        public async IAsyncEnumerable<ChatStreamEvent> StreamAsync(string message, [EnumeratorCancellation] CancellationToken ct = default)
+        public async IAsyncEnumerable<ChatStreamEvent> StreamAsync(string message, string? threadId = null, [EnumeratorCancellation] CancellationToken ct = default)
         {
             if (message is null) throw new ArgumentNullException(nameof(message));
 
-            var stream = _agent.RunStreamingAsync(message);
+            AgentThread? thread = null;
+            if (!string.IsNullOrEmpty(threadId) && _threadProvider is not null)
+            {
+                thread = await _threadProvider.GetThreadAsync(threadId, ct).ConfigureAwait(false);
+            }
+
+            var stream = thread is not null
+                ? _agent.RunStreamingAsync(message, thread, cancellationToken: ct)
+                : _agent.RunStreamingAsync(message, cancellationToken: ct);
             await foreach (var update in stream.WithCancellation(ct).ConfigureAwait(false))
             {
                 if (!string.IsNullOrEmpty(update.Text))
@@ -86,6 +114,13 @@ namespace ObsidianAI.Infrastructure.LLM
                     }
                 }
             }
+        }
+
+        /// <inheritdoc />
+        public Task<AgentThread> CreateThreadAsync(CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(_agent.GetNewThread());
         }
     }
 }

@@ -8,6 +8,7 @@ using ObsidianAI.Domain.Ports;
 using ObsidianAI.Infrastructure.Configuration;
 using ObsidianAI.Infrastructure.Data;
 using ObsidianAI.Infrastructure.Data.Repositories;
+using ObsidianAI.Infrastructure.Agents;
 using ObsidianAI.Infrastructure.LLM;
 using ObsidianAI.Infrastructure.Vault;
 
@@ -35,6 +36,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IMessageRepository, MessageRepository>();
 
         services.AddSingleton<IAIAgentFactory, ConfiguredAIAgentFactory>();
+        services.AddSingleton<IAgentThreadProvider, InMemoryAgentThreadProvider>();
         services.AddSingleton<IVaultToolExecutor>(sp =>
         {
             var logger = sp.GetRequiredService<ILogger<McpVaultToolExecutor>>();

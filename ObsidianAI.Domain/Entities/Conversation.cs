@@ -49,6 +49,11 @@ public class Conversation
     public string ModelName { get; set; } = string.Empty;
 
     /// <summary>
+    /// AgentThread identifier used by the Agent Framework to maintain multi-turn context.
+    /// </summary>
+    public string? ThreadId { get; set; }
+
+    /// <summary>
     /// Messages that belong to this conversation. EF Core populates this collection.
     /// </summary>
     public List<Message> Messages { get; set; } = new();

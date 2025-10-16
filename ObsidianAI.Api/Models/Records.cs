@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace ObsidianAI.Api.Models;
 
-public record ChatRequest(string Message, Guid? ConversationId = null, List<ChatMessage>? History = null);
+public record ChatRequest(string Message, Guid? ConversationId = null);
 
 public record ChatMessage(string Role, string Content, FileOperationData? FileOperation = null);
 

@@ -17,6 +17,7 @@ namespace ObsidianAI.Application.UseCases;
 public class StartChatUseCase
 {
     private readonly IAIAgentFactory _agentFactory;
+    private readonly IAgentThreadProvider _threadProvider;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
     private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
     private readonly IVaultPathResolver _vaultPathResolver;
@@ -26,6 +27,7 @@ public class StartChatUseCase
 
     public StartChatUseCase(
         IAIAgentFactory agentFactory,
+        IAgentThreadProvider threadProvider,
         Domain.Services.IFileOperationExtractor extractor,
         IVaultPathResolver vaultPathResolver,
         IConversationRepository conversationRepository,
@@ -34,6 +36,7 @@ public class StartChatUseCase
         ILogger<StartChatUseCase>? logger = null)
     {
         _agentFactory = agentFactory;
+        _threadProvider = threadProvider ?? throw new ArgumentNullException(nameof(threadProvider));
         _extractor = extractor;
         _vaultPathResolver = vaultPathResolver ?? throw new ArgumentNullException(nameof(vaultPathResolver));
         _conversationRepository = conversationRepository;
@@ -60,7 +63,6 @@ public class StartChatUseCase
         }
 
         var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
-        var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
 
         IEnumerable<object>? tools = null;
         if (_mcpClientProvider != null)
@@ -72,8 +74,10 @@ public class StartChatUseCase
             }
         }
 
-        var agent = await _agentFactory.CreateAgentAsync(instructions, tools, ct).ConfigureAwait(false);
-        var responseText = await agent.SendAsync(input.Message, ct).ConfigureAwait(false);
+        var agent = await _agentFactory.CreateAgentAsync(instructions, tools, _threadProvider, ct).ConfigureAwait(false);
+        var threadId = await EnsureThreadAsync(conversation, persistenceContext.ThreadId, agent, ct).ConfigureAwait(false);
+        var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
+        var responseText = await agent.SendAsync(input.Message, threadId, ct).ConfigureAwait(false);
         var fileOperation = _extractor.Extract(responseText);
         var resolvedOperation = await ResolveFileOperationAsync(fileOperation, ct).ConfigureAwait(false);
 
@@ -82,6 +86,39 @@ public class StartChatUseCase
         await UpdateConversationMetadataAsync(conversation.Id, persistenceContext.TitleSource ?? input.Message, ct).ConfigureAwait(false);
 
         return new Contracts.StartChatResult(conversation.Id, userMessage.Id, assistantMessage.Id, responseText, resolvedOperation);
+    }
+
+    private async Task<string> EnsureThreadAsync(Conversation conversation, string? persistedThreadId, IChatAgent agent, CancellationToken ct)
+    {
+        if (conversation == null)
+        {
+            throw new ArgumentNullException(nameof(conversation));
+        }
+
+        var candidateId = !string.IsNullOrEmpty(conversation.ThreadId)
+            ? conversation.ThreadId
+            : persistedThreadId;
+
+        if (!string.IsNullOrEmpty(candidateId))
+        {
+            var existing = await _threadProvider.GetThreadAsync(candidateId, ct).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                if (!string.Equals(conversation.ThreadId, candidateId, StringComparison.Ordinal))
+                {
+                    conversation.ThreadId = candidateId;
+                    await _conversationRepository.UpdateAsync(conversation, ct).ConfigureAwait(false);
+                }
+
+                return candidateId;
+            }
+        }
+
+        var thread = await agent.CreateThreadAsync(ct).ConfigureAwait(false);
+        var threadId = await _threadProvider.RegisterThreadAsync(thread, ct).ConfigureAwait(false);
+        conversation.ThreadId = threadId;
+        await _conversationRepository.UpdateAsync(conversation, ct).ConfigureAwait(false);
+        return threadId;
     }
 
     private async Task<Domain.Models.FileOperation?> ResolveFileOperationAsync(Domain.Models.FileOperation? fileOperation, CancellationToken ct)

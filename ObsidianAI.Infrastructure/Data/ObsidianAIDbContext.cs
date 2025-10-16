@@ -45,6 +45,7 @@ public class ObsidianAIDbContext : DbContext
         builder.Property(c => c.UserId).HasMaxLength(128);
         builder.Property(c => c.Title).HasMaxLength(256);
         builder.Property(c => c.ModelName).HasMaxLength(128);
+        builder.Property(c => c.ThreadId).HasMaxLength(128);
         builder.Property(c => c.CreatedAt).HasConversion(new UtcDateTimeConverter());
         builder.Property(c => c.UpdatedAt).HasConversion(new UtcDateTimeConverter());
         builder.Property(c => c.Provider)
@@ -61,6 +62,7 @@ public class ObsidianAIDbContext : DbContext
 
         builder.HasIndex(c => c.UpdatedAt);
         builder.HasIndex(c => new { c.UserId, c.IsArchived });
+        builder.HasIndex(c => c.ThreadId);
     }
 
     private static void ConfigureMessage(EntityTypeBuilder<Message> builder)
