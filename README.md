@@ -221,6 +221,67 @@ The solution follows **Clean Architecture** principles with clear separation of 
     ```
     This will launch the .NET Aspire dashboard, from which you can access the Web frontend and API. The database will be automatically created and migrated on first run.
 
+## Docker & Local Deployment
+
+ObsidianAI can be run locally using Docker and docker-compose. This setup orchestrates the API, Web UI, and MCP Gateway, and persists chat data in a local SQLite volume.
+
+### Prerequisites
+- Docker Desktop (Windows/Mac/Linux)
+- .NET 9 SDK (for local builds)
+
+### Quick Start
+1. **Clone the repository**
+2. **Configure environment variables**
+   - Copy `.env` (created by default) and set your LLM API keys and endpoints as needed.
+3. **Build and run the stack:**
+   ```powershell
+   docker compose up --build
+   ```
+4. **Access the app:**
+   - Web UI: [http://localhost:5244](http://localhost:5244)
+   - API: [http://localhost:5095](http://localhost:5095)
+   - MCP Gateway: [http://localhost:8033](http://localhost:8033)
+
+### Data Persistence
+- All chat and conversation data is stored in a SQLite file inside a Docker volume (`obsidianai-data`).
+- Data is retained across container restarts.
+
+### Environment Variables
+- LLM provider keys and endpoints are set via `.env` and injected into containers at runtime.
+- Example `.env`:
+  ```env
+  LLM__Provider=OpenRouter
+  LLM__LMStudio__Endpoint=http://localhost:1234/v1
+  LLM__LMStudio__ApiKey=lm-studio
+  LLM__LMStudio__Model=openai/gpt-oss-20b
+  LLM__OpenRouter__Endpoint=https://openrouter.ai/api/v1
+  LLM__OpenRouter__ApiKey=sk-or-v1-xxxx
+  LLM__OpenRouter__Model=google/gemini-2.5-flash-lite-preview-09-2025
+  ```
+
+### MCP Gateway
+- The MCP Gateway is orchestrated as a container and exposed to the API via the internal Docker network.
+- The API uses the environment variable `MCP_ENDPOINT` to connect to the gateway.
+
+### Database Migrations
+- The API automatically applies EF Core migrations on startup. No manual migration steps are required.
+
+### Stopping & Restarting
+- To stop the stack:
+  ```powershell
+  docker compose down
+  ```
+- To restart and preserve data:
+  ```powershell
+  docker compose up
+  ```
+
+### Troubleshooting
+- Ensure your LLM API keys are valid and endpoints are reachable from within Docker.
+- For LM Studio, you may need to expose the service to Docker or use OpenRouter for cloud-based inference.
+
+---
+
 ## Usage
 
 Once the application is running, navigate to the ObsidianAI.Web service in the Aspire dashboard. You can then use the chat interface to interact with your Obsidian vault.
