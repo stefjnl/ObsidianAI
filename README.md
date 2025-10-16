@@ -10,6 +10,11 @@ ObsidianAI is a .NET Aspire application designed to enhance your Obsidian vault 
 *   **LLM Integration**: Configurable to use different LLM providers (e.g., LMStudio, OpenRouter).
 *   **Model Context Protocol (MCP)**: Enables the AI assistant to use specific tools to manage your Obsidian notes (create, modify, append, delete files).
 *   **Real-time Chat Interface**: A Blazor-based web frontend for seamless interaction with the AI assistant.
+*   **Conversation History**: Persistent storage of chat sessions with SQLite database and Entity Framework Core.
+*   **Conversation Management**: Full CRUD operations for conversations including archive, delete, and export functionality.
+*   **Action Cards**: Interactive UI components for confirming file operations before execution.
+*   **File Operation Tracking**: Complete audit trail of all file modifications made through the AI assistant.
+*   **Clean Architecture**: Enterprise-grade architecture with clear separation of concerns across Domain, Application, Infrastructure, API, and Web layers.
 *   **.NET Aspire Orchestration**: Leverages .NET Aspire for simplified development, deployment, and observability of distributed applications.
 
 ## Microsoft Agent Framework
@@ -64,15 +69,100 @@ The Microsoft Agent Framework provides:
 - **Streaming Support**: Built-in streaming capabilities for real-time responses
 - **Function Calling**: Native support for detecting and handling tool calls during conversations
 
+## Clean Architecture Implementation
+
+ObsidianAI follows **Clean Architecture** principles with strict dependency direction:
+
+### Layer Dependencies
+```
+Web → API → Application → Domain ← Infrastructure
+```
+
+### Key Architectural Patterns
+
+**Domain Layer (Core Business Logic)**
+- Contains only business entities and interfaces
+- No external dependencies
+- Defines contracts for all external interactions
+
+**Application Layer (Use Cases)**
+- Orchestrates business workflows
+- Depends only on Domain layer
+- Contains DTOs and use case implementations
+- Manages transaction boundaries
+
+**Infrastructure Layer (External Concerns)**
+- Implements Domain interfaces
+- Handles database operations, external APIs, file system
+- Contains EF Core DbContext and repository implementations
+- Provides LLM client implementations
+
+**API Layer (Web API)**
+- Exposes HTTP endpoints for all operations
+- Handles streaming with Server-Sent Events
+- Integrates with MCP gateway
+- Contains health checks and service configuration
+
+**Web Layer (UI)**
+- Blazor Server components for interactive UI
+- SignalR integration for real-time updates
+- Service layer for API communication
+- Component-based architecture with shared components
+
+### Data Flow
+1. **User Interaction** → Web Layer components
+2. **API Calls** → API Layer endpoints
+3. **Use Case Execution** → Application Layer
+4. **Business Logic** → Domain Layer entities/services
+5. **Data Persistence** → Infrastructure Layer repositories
+6. **External Integration** → Infrastructure Layer (LLM/MCP)
+
+### Key Benefits
+- **Testability**: Each layer can be unit tested in isolation
+- **Maintainability**: Clear separation of concerns
+- **Flexibility**: Easy to swap implementations (e.g., different LLM providers)
+- **Scalability**: Layers can be scaled independently
+- **Domain Focus**: Business logic is protected from external concerns
+
 
 ## Project Structure
 
-The solution is composed of three main projects:
+The solution follows **Clean Architecture** principles with clear separation of concerns across five main layers:
 
-*   **ObsidianAI.AppHost**: The .NET Aspire host project that orchestrates the API and Web projects.
-*   **ObsidianAI.Api**: A C# ASP.NET Core API that exposes endpoints for chat interactions, vault modifications, and LLM provider configuration. It integrates with LLMs and the MCP client.
-*   **ObsidianAI.Web**: A Blazor web application that provides the user interface for interacting with the AI assistant. It communicates with the API via HTTP and SignalR for real-time updates.
-*   **ObsidianAI.ServiceDefaults**: A shared project containing common configurations and extensions for .NET Aspire services.
+### Core Projects
+
+*   **ObsidianAI.Domain**: Core business entities and abstractions (no external dependencies)
+    - Entities: `Conversation`, `Message`, `ActionCardRecord`, `PlannedActionRecord`, `FileOperationRecord`
+    - Domain models: `ChatInput`, `ChatStreamEvent`, `FileOperation`, `OperationResult`
+    - Ports/Interfaces: `IChatAgent`, `IConversationRepository`, `IMessageRepository`, `IVaultToolExecutor`
+
+*   **ObsidianAI.Application**: Use cases and orchestration between domain and infrastructure
+    - Use Cases: `StartChatUseCase`, `StreamChatUseCase`, `CreateConversationUseCase`, `ListConversationsUseCase`, etc.
+    - DTOs: `ConversationDto`, `ConversationDetailDto`, `MessageDto`
+    - Services: `IMcpClientProvider`, `IFileOperationExtractor`, `IVaultPathNormalizer`
+
+*   **ObsidianAI.Infrastructure**: External concerns and implementations
+    - Data: `ObsidianAIDbContext` with Entity Framework Core and SQLite
+    - Repositories: `ConversationRepository`, `MessageRepository`
+    - LLM Integration: `ConfiguredAIAgentFactory`, `LmStudioChatAgent`, `OpenRouterChatAgent`
+    - Vault Operations: `McpVaultToolExecutor`, `NullVaultToolExecutor`
+    - Configuration: Strongly-typed settings for LLM providers
+
+*   **ObsidianAI.Api**: Web API endpoints and streaming infrastructure
+    - Services: `ObsidianAssistantService`, `McpClientService`, `StreamingEventWriter`
+    - Health Checks: LLM and MCP service monitoring
+    - Configuration: Service registration and endpoint mapping
+
+*   **ObsidianAI.Web**: Blazor web frontend with real-time communication
+    - Components: `Chat.razor`, `ConversationSidebar.razor`, `ChatArea.razor`, `ActionCard.razor`
+    - Services: `ChatService`, `IChatService`, SignalR `ChatHub`
+    - Models: `ChatMessage`, `ConversationMetadata`, `ActionCardData`, `FileOperationData`
+
+### Orchestration Projects
+
+*   **ObsidianAI.AppHost**: The .NET Aspire host project that orchestrates all services
+*   **ObsidianAI.ServiceDefaults**: Shared configurations and extensions for .NET Aspire services
+*   **ObsidianAI.Tests**: Unit and integration tests for application and infrastructure layers
 
 ## Getting Started
 
@@ -81,6 +171,7 @@ The solution is composed of three main projects:
 *   .NET 8 SDK
 *   Docker (for running LMStudio or other containerized LLMs, if applicable)
 *   An Obsidian vault (for the AI assistant to interact with)
+*   MCP Gateway (Docker container automatically started by Aspire)
 
 ### Running the Application
 
@@ -89,8 +180,10 @@ The solution is composed of three main projects:
     git clone https://github.com/your-repo/ObsidianAI.git
     cd ObsidianAI
     ```
+
 2.  **Configure LLM Provider**:
     In `ObsidianAI.Api/appsettings.json` (or `appsettings.Development.json`), configure your preferred LLM provider.
+    
     Example for LMStudio:
     ```json
     "LLM": {
@@ -101,6 +194,7 @@ The solution is composed of three main projects:
       }
     }
     ```
+    
     Example for OpenRouter:
     ```json
     "LLM": {
@@ -112,25 +206,150 @@ The solution is composed of three main projects:
       }
     }
     ```
-3.  **Run the Aspire AppHost**:
+
+3.  **Configure Database Connection** (optional):
+    The application uses SQLite by default with a local database file (`obsidianai.db`). You can customize the connection string:
+    ```json
+    "ConnectionStrings": {
+      "ObsidianAI": "Data Source=obsidianai.db"
+    }
+    ```
+
+4.  **Run the Aspire AppHost**:
     ```bash
     dotnet run --project ObsidianAI.AppHost
     ```
-    This will launch the .NET Aspire dashboard, from which you can access the Web frontend and API.
+    This will launch the .NET Aspire dashboard, from which you can access the Web frontend and API. The database will be automatically created and migrated on first run.
 
 ## Usage
 
 Once the application is running, navigate to the ObsidianAI.Web service in the Aspire dashboard. You can then use the chat interface to interact with your Obsidian vault.
 
-Example commands:
+### Basic Chat Commands
+
 *   "Create a new note called 'Meeting Minutes' with content 'Discussed project roadmap.'"
 *   "Append 'Action items: Follow up with John' to 'Meeting Minutes'."
 *   "List all files in my vault."
 *   "Search for 'project roadmap' in my notes."
 
+### Conversation Management
+
+The application now includes full conversation history management:
+
+*   **Conversation History**: Access all previous chat sessions through the history sidebar
+*   **New Conversations**: Start fresh chat sessions at any time
+*   **Conversation Search**: Find specific conversations by title or content
+*   **Archive/Delete**: Manage your conversation library with archive and delete options
+*   **Export**: Export conversations as JSON for backup or sharing
+*   **Persistent Storage**: All conversations are automatically saved to SQLite database
+
+### Action Cards & File Operations
+
+When the AI assistant proposes file modifications, you'll see interactive **Action Cards** that allow you to:
+
+*   **Review**: See exactly what changes will be made before execution
+*   **Confirm**: Approve or cancel specific file operations
+*   **Track**: Monitor the status of completed operations
+*   **Audit**: View complete history of all file modifications
+
+### URL Navigation
+
+You can directly access specific conversations using URL parameters:
+```
+https://localhost:port/?conversationId=your-conversation-guid
+```
+
+## Database Schema
+
+The application uses SQLite with Entity Framework Core for data persistence. The database includes the following main tables:
+
+### Core Tables
+
+**Conversations**
+- Stores chat session metadata (title, created/updated dates, provider info)
+- Supports archiving and multi-user scenarios (future)
+
+**Messages**
+- Individual chat messages with role (User/Assistant/System)
+- Links to conversations with proper ordering
+- Supports processing status and token tracking
+
+**ActionCards**
+- Interactive action proposals from the AI assistant
+- Tracks status (Pending/Processing/Completed/Failed/Cancelled)
+- Contains planned actions for user confirmation
+
+**PlannedActions**
+- Individual file operations within action cards
+- Supports create, modify, move, delete operations
+- Includes source/destination paths and content
+
+**FileOperations**
+- Completed file operation audit trail
+- Tracks actual executed operations
+- Links back to original messages
+
+### Database Migrations
+
+The application uses Entity Framework Core migrations. Initial migration is automatically applied on startup:
+```bash
+dotnet ef database update
+```
+
+For development, you can create new migrations:
+```bash
+dotnet ef migrations add MigrationName --project ObsidianAI.Infrastructure
+```
+
+## Development
+
+### Project Dependencies
+
+**Key NuGet Packages**:
+- `Microsoft.EntityFrameworkCore.Sqlite` (9.x) - Database provider
+- `Microsoft.Agents.AI.OpenAI` (v1.0.0-preview.251009.1) - Agent framework
+- `Microsoft.AspNetCore.SignalR` - Real-time communication
+- `Microsoft.Extensions.Hosting` - Application hosting
+- `Aspire.Hosting` - Service orchestration
+
+### Testing
+
+The solution includes comprehensive test coverage:
+- **Unit Tests**: Application layer use cases and infrastructure repositories
+- **Integration Tests**: API endpoints and database operations
+- **Test Framework**: xUnit with in-memory SQLite for testing
+
+```bash
+# Run all tests
+dotnet test
+
+# Run specific project tests
+dotnet test ObsidianAI.Tests
+```
+
+### Configuration
+
+**Development Environment**:
+- Use `appsettings.Development.json` for local configuration
+- Database file is created automatically in the API project directory
+- MCP gateway runs as Docker container on localhost:8033
+
+**Production Considerations**:
+- Configure appropriate connection strings for persistent storage
+- Set up proper logging and monitoring
+- Consider user authentication for multi-tenant scenarios
+- Implement backup strategies for conversation data
+
 ## Contributing
 
 Contributions are welcome! Please refer to the `CONTRIBUTING.md` file (if available) for guidelines.
+
+### Development Guidelines
+- Follow Clean Architecture principles
+- Maintain separation of concerns between layers
+- Write unit tests for new use cases and infrastructure components
+- Update documentation for new features
+- Use dependency injection throughout the application
 
 ## License
 
