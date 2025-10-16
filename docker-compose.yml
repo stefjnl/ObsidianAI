@@ -1,0 +1,41 @@
+version: '3.8'
+services:
+  api:
+    build:
+      context: .
+      dockerfile: ObsidianAI.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__ObsidianAI: Data Source=/app/data/obsidianai.db
+      LLM__Provider: ${LLM__Provider}
+      LLM__LMStudio__Endpoint: ${LLM__LMStudio__Endpoint}
+      LLM__LMStudio__ApiKey: ${LLM__LMStudio__ApiKey}
+      LLM__LMStudio__Model: ${LLM__LMStudio__Model}
+      LLM__OpenRouter__Endpoint: ${LLM__OpenRouter__Endpoint}
+      LLM__OpenRouter__ApiKey: ${LLM__OpenRouter__ApiKey}
+      LLM__OpenRouter__Model: ${LLM__OpenRouter__Model}
+      MCP_ENDPOINT: http://mcp-gateway:8033/mcp
+    volumes:
+      - obsidianai-data:/app/data
+    ports:
+      - "5095:8080"
+    depends_on:
+      - mcp-gateway
+  web:
+    build:
+      context: .
+      dockerfile: ObsidianAI.Web/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__api: http://api:8080
+    ports:
+      - "5244:8080"
+    depends_on:
+      - api
+  mcp-gateway:
+    image: ghcr.io/modelcontextprotocol/gateway:latest
+    command: [ "mcp", "gateway", "run", "--transport", "streaming", "--port", "8033", "--servers", "obsidian" ]
+    ports:
+      - "8033:8033"
+volumes:
+  obsidianai-data:
