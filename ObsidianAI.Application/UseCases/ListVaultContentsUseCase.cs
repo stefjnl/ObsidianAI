@@ -62,7 +62,7 @@ public sealed class ListVaultContentsUseCase
                 _logger.LogInformation("Listing contents of folder: {FolderPath}", folderPath);
                 toolResult = await mcpClient.CallToolAsync(
                     "obsidian_list_files_in_dir",
-                    new Dictionary<string, object?> { ["path"] = folderPath },
+                    new Dictionary<string, object?> { ["dirpath"] = folderPath },
                     cancellationToken: ct).ConfigureAwait(false);
                 currentPath = folderPath;
             }

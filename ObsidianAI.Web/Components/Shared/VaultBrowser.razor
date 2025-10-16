@@ -107,27 +107,31 @@
     {
         if (!folder.IsExpanded)
         {
-            // Expand and load children
+            // Expand and load children if not already loaded
             folder.IsExpanded = true;
             StateHasChanged();
 
-            try
+            // Only load children if they haven't been loaded yet
+            if (folder.Children.Count == 0)
             {
-                var contents = await ChatService.BrowseVaultAsync(folder.Path);
-                folder.Children = ProcessVaultItems(contents.Items);
-                Logger.LogInformation("Loaded {Count} children for folder: {Path}", folder.Children.Count, folder.Path);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "Failed to load folder contents: {Path}", folder.Path);
-                folder.Children = new List<VaultItemData>();
-            }
+                try
+                {
+                    var contents = await ChatService.BrowseVaultAsync(folder.Path);
+                    folder.Children = ProcessVaultItems(contents.Items);
+                    Logger.LogInformation("Loaded {Count} children for folder: {Path}", folder.Children.Count, folder.Path);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Failed to load folder contents: {Path}", folder.Path);
+                    folder.Children = new List<VaultItemData>();
+                }
 
-            StateHasChanged();
+                StateHasChanged();
+            }
         }
         else
         {
-            // Collapse
+            // Collapse folder
             folder.IsExpanded = false;
             StateHasChanged();
         }

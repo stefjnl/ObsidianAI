@@ -6,7 +6,7 @@
         
         @if (Item.Type == VaultItemType.Folder)
         {
-            <span class="vault-expand-icon">@(Item.IsExpanded ? "▼" : "▶")</span>
+            <span class="vault-expand-icon @(Item.IsExpanded ? "expanded" : "")">@(Item.IsExpanded ? "▼" : "▶")</span>
         }
         else
         {
