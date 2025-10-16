@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -276,6 +277,93 @@ public static class EndpointRegistration
             return Results.Ok(payload);
         });
 
+        app.MapPost("/messages/{id:guid}/artifacts", async (
+            Guid id,
+            UpdateMessageArtifactsRequest request,
+            UpdateMessageArtifactsUseCase useCase,
+            CancellationToken cancellationToken) =>
+        {
+            var actionCardUpdate = request.ActionCard == null
+                ? null
+                : new UpdateMessageArtifactsUseCase.ActionCardUpdate(
+                    TryParseGuid(request.ActionCard.Id),
+                    request.ActionCard.Title,
+                    request.ActionCard.Status,
+                    request.ActionCard.Operation,
+                    request.ActionCard.StatusMessage,
+                    request.ActionCard.CreatedAt,
+                    request.ActionCard.CompletedAt);
+
+            var plannedActions = request.ActionCard?.PlannedActions?.Select(action => new UpdateMessageArtifactsUseCase.PlannedActionUpdate(
+                TryParseGuid(action.Id),
+                action.Type,
+                action.Source,
+                action.Destination,
+                action.Description,
+                action.Operation,
+                action.Content,
+                action.SortOrder)).ToList();
+
+            var fileOperationUpdate = request.FileOperation == null
+                ? null
+                : new UpdateMessageArtifactsUseCase.FileOperationUpdate(
+                    request.FileOperation.Action,
+                    request.FileOperation.FilePath,
+                    request.FileOperation.Timestamp);
+
+            var updated = await useCase.ExecuteAsync(
+                id,
+                actionCardUpdate,
+                plannedActions,
+                fileOperationUpdate,
+                cancellationToken).ConfigureAwait(false);
+
+            if (updated is null)
+            {
+                return Results.NotFound();
+            }
+
+            var payload = new
+            {
+                id = updated.Id,
+                role = updated.Role,
+                content = updated.Content,
+                timestamp = updated.Timestamp,
+                isProcessing = updated.IsProcessing,
+                tokenCount = updated.TokenCount,
+                actionCard = updated.ActionCard == null ? null : new
+                {
+                    id = updated.ActionCard.Id,
+                    title = updated.ActionCard.Title,
+                    status = updated.ActionCard.Status,
+                    operation = updated.ActionCard.Operation,
+                    statusMessage = updated.ActionCard.StatusMessage,
+                    createdAt = updated.ActionCard.CreatedAt,
+                    completedAt = updated.ActionCard.CompletedAt,
+                    plannedActions = updated.PlannedActions.Select(action => new
+                    {
+                        id = action.Id,
+                        type = action.Type,
+                        source = action.Source,
+                        destination = action.Destination,
+                        description = action.Description,
+                        operation = action.Operation,
+                        content = action.Content,
+                        sortOrder = action.SortOrder
+                    })
+                },
+                fileOperation = updated.FileOperation == null ? null : new
+                {
+                    id = updated.FileOperation.Id,
+                    action = updated.FileOperation.Action,
+                    filePath = updated.FileOperation.FilePath,
+                    timestamp = updated.FileOperation.Timestamp
+                }
+            };
+
+            return Results.Ok(payload);
+        });
+
         app.MapPost("/chat", async (
             ChatRequest request,
             StartChatUseCase useCase,
@@ -374,5 +462,15 @@ public static class EndpointRegistration
         var invalidChars = System.IO.Path.GetInvalidFileNameChars();
         var sanitized = new string(title.Select(c => invalidChars.Contains(c) ? '-' : c).ToArray());
         return string.IsNullOrWhiteSpace(sanitized) ? "conversation" : sanitized;
+    }
+
+    private static Guid? TryParseGuid(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Guid.TryParse(value, out var result) ? result : null;
     }
 }

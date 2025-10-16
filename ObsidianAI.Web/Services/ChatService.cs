@@ -611,6 +611,36 @@ public class ChatService : IChatService
         };
     }
 
+    /// <inheritdoc />
+    public async Task UpdateMessageArtifactsAsync(Guid messageId, MessageArtifactsUpdate update)
+    {
+        try
+        {
+            _logger.LogInformation("Persisting artifacts for message {MessageId}", messageId);
+
+            var payload = new
+            {
+                actionCard = BuildActionCardPayload(update.ActionCard),
+                fileOperation = BuildFileOperationPayload(update.FileOperation)
+            };
+
+            var response = await _httpClient.PostAsJsonAsync($"/messages/{messageId}/artifacts", payload);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogWarning("Message {MessageId} not found when updating artifacts", messageId);
+                return;
+            }
+
+            response.EnsureSuccessStatusCode();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating artifacts for message {MessageId}", messageId);
+            throw;
+        }
+    }
+
     /// <summary>
     /// Performs a single-file modify operation (append/modify/delete/create) on the vault.
     /// </summary>
@@ -647,6 +677,58 @@ public class ChatService : IChatService
             _logger.LogError(ex, "Error performing modify operation");
             throw;
         }
+    }
+
+    private static object? BuildActionCardPayload(ActionCardUpdate? actionCard)
+    {
+        if (actionCard is null)
+        {
+            return null;
+        }
+
+        var plannedActions = actionCard.PlannedActions ?? Array.Empty<PlannedActionUpdate>();
+
+        return new
+        {
+            id = actionCard.Id?.ToString(),
+            title = actionCard.Title,
+            status = actionCard.Status,
+            operation = actionCard.Operation,
+            statusMessage = actionCard.StatusMessage,
+            createdAt = actionCard.CreatedAt,
+            completedAt = actionCard.CompletedAt,
+            plannedActions = plannedActions.Select(action => new
+            {
+                id = action.Id?.ToString(),
+                type = action.Type,
+                source = action.Source,
+                destination = action.Destination,
+                description = action.Description,
+                operation = action.Operation,
+                content = action.Content,
+                sortOrder = action.SortOrder
+            }).ToList()
+        };
+    }
+
+    private static object? BuildFileOperationPayload(FileOperationUpdate? fileOperation)
+    {
+        if (fileOperation is null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(fileOperation.Action) || string.IsNullOrWhiteSpace(fileOperation.FilePath))
+        {
+            return null;
+        }
+
+        return new
+        {
+            action = fileOperation.Action,
+            filePath = fileOperation.FilePath,
+            timestamp = fileOperation.Timestamp
+        };
     }
 }
 

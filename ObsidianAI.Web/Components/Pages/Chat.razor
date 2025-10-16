@@ -740,6 +740,9 @@
         conversationHistory[index] = message;
         StateHasChanged();
 
+        await PersistMessageArtifactsAsync(message);
+
+        FileOperationData? persistedFileOperation = null;
         try
         {
             // Route single-file actions to Modify; multi-file to Reorganize
@@ -755,6 +758,14 @@
                 };
 
                 var response = await ChatService.ModifyAsync(modifyRequest);
+                if (response.Success && !string.IsNullOrWhiteSpace(response.FilePath))
+                {
+                    persistedFileOperation = new FileOperationData
+                    {
+                        Action = action.Operation,
+                        FilePath = response.FilePath
+                    };
+                }
 
                 // Update the action card with the result
                 message = message with
@@ -809,10 +820,11 @@
             conversationHistory[index] = message;
         }
 
+        await PersistMessageArtifactsAsync(message, persistedFileOperation);
         StateHasChanged();
     }
 
-    private Task HandleActionCancelled(string actionId)
+    private async Task HandleActionCancelled(string actionId)
     {
         // Find the message with this action card
         var message = conversationHistory.FirstOrDefault(m => m.ActionCard?.Id == actionId);
@@ -833,8 +845,9 @@
             conversationHistory[index] = message;
 
             StateHasChanged();
+
+            await PersistMessageArtifactsAsync(message);
         }
-        return Task.CompletedTask;
     }
 
     private async Task HandleActionEdit(string actionId)
@@ -851,6 +864,70 @@
         conversationHistory.Add(editMessage);
         StateHasChanged();
         await ScrollToBottom();
+    }
+
+    private async Task PersistMessageArtifactsAsync(ChatMessage message, FileOperationData? fileOperation = null)
+    {
+        if (!Guid.TryParse(message.Id, out var messageId))
+        {
+            return;
+        }
+
+        ActionCardUpdate? actionCardUpdate = null;
+        if (message.ActionCard != null)
+        {
+            var plannedActions = message.ActionCard.Actions
+                .Select((action, index) => new PlannedActionUpdate(
+                    null,
+                    action.Type.ToString(),
+                    string.IsNullOrWhiteSpace(action.Source) ? null : action.Source,
+                    string.IsNullOrWhiteSpace(action.Destination) ? null : action.Destination,
+                    string.IsNullOrWhiteSpace(action.Description) ? null : action.Description,
+                    action.Operation,
+                    string.IsNullOrWhiteSpace(action.Content) ? null : action.Content,
+                    index))
+                .ToList();
+
+            var operation = message.ActionCard.Actions.FirstOrDefault()?.Operation;
+            if (string.IsNullOrWhiteSpace(operation))
+            {
+                operation = message.ActionCard.OperationType.ToString().ToLowerInvariant();
+            }
+            var completedAt = message.ActionCard.Status is ActionCardStatus.Completed or ActionCardStatus.Failed or ActionCardStatus.Cancelled
+                ? DateTime.UtcNow
+                : (DateTime?)null;
+
+            actionCardUpdate = new ActionCardUpdate(
+                Guid.TryParse(message.ActionCard.Id, out var cardId) ? cardId : null,
+                message.ActionCard.Title,
+                message.ActionCard.Status.ToString(),
+                operation,
+                message.ActionCard.StatusMessage,
+                message.Timestamp,
+                completedAt,
+                plannedActions);
+        }
+
+        FileOperationUpdate? fileOperationUpdate = null;
+        if (fileOperation != null && !string.IsNullOrWhiteSpace(fileOperation.Action) && !string.IsNullOrWhiteSpace(fileOperation.FilePath))
+        {
+            fileOperationUpdate = new FileOperationUpdate(fileOperation.Action, fileOperation.FilePath, DateTime.UtcNow);
+        }
+
+        if (actionCardUpdate is null && fileOperationUpdate is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var update = new MessageArtifactsUpdate(actionCardUpdate, fileOperationUpdate);
+            await ChatService.UpdateMessageArtifactsAsync(messageId, update);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to persist artifacts for message {MessageId}", messageId);
+        }
     }
 
     private Task ParseResponseForComponents(string response)

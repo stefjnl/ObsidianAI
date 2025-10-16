@@ -103,6 +103,13 @@ public interface IChatService
     /// <param name="request">The modify request details.</param>
     /// <returns>The result of the modify operation.</returns>
     Task<ModifyResponse> ModifyAsync(ModifyRequest request);
+
+    /// <summary>
+    /// Updates persisted artifacts for a specific message.
+    /// </summary>
+    /// <param name="messageId">Identifier of the message to update.</param>
+    /// <param name="update">Artifact payload containing action card and/or file operation data.</param>
+    Task UpdateMessageArtifactsAsync(Guid messageId, MessageArtifactsUpdate update);
 }
 
 /// <summary>
