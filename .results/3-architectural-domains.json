@@ -1,0 +1,96 @@
+{
+    "api": {
+        "required_patterns": {
+            "minimal_api_endpoints": "All routes are registered in ObsidianAI.Api/Configuration/EndpointRegistration.cs via MapObsidianEndpoints and rely on dependency-injected use cases.",
+            "response_projection": "Endpoints map domain/use-case results into anonymous payloads before returning (e.g., conversation export and list endpoints).",
+            "sse_streaming": "The /chat/stream endpoint delegates streaming to StreamingEventWriter.WriteAsync, which formats Server-Sent Events for downstream consumers."
+        },
+        "architectural_constraints": {
+            "use_usecases": "New endpoints must orchestrate work through Application-layer use cases rather than querying EF Core or repositories directly.",
+            "depend_on_ilmmfactory": "LLM provider details are resolved through ILlmClientFactory and AppSettings; endpoints should not hard-code provider/model names.",
+            "stick_with_minimal_api": "The project intentionally avoids MVC controllers—extend MapObsidianEndpoints instead of creating controller classes."
+        }
+    },
+    "application-layer": {
+        "required_patterns": {
+            "usecase_execute_async": "Each use case exposes an ExecuteAsync method that coordinates domain ports (see StartChatUseCase, ModifyVaultUseCase, SearchVaultUseCase).",
+            "conversation_lifecycle": "StartChatUseCase ensures conversations and messages persist through EnsureConversationAsync/PersistUserMessageAsync before invoking the agent.",
+            "tool_discovery": "Use cases that need MCP tools request them through IMcpClientProvider and pass them to IAIAgentFactory-created agents."
+        },
+        "architectural_constraints": {
+            "respect_thread_provider": "Agent interactions must obtain thread identifiers through IAgentThreadProvider (StartChatUseCase.EnsureThreadAsync) to preserve multi-turn context.",
+            "normalize_file_operations": "File operations extracted from LLM output are funneled through IVaultPathResolver before persistence, ensuring canonical vault paths.",
+            "log_via_ILogger": "Use cases leverage ILogger<T> for diagnostics; new orchestration code should follow the same pattern for observability."
+        }
+    },
+    "data-layer": {
+        "required_patterns": {
+            "ef_core_context": "ObsidianAIDbContext configures each aggregate with fluent API mappings, UTC converters, and cascade rules for related entities.",
+            "repository_implementations": "Domain repository ports are implemented in ObsidianAI.Infrastructure/Data/Repositories with async Add/Get/Update/Delete methods that call SaveChangesAsync.",
+            "migrations_versioning": "Schema changes are captured through timestamped EF Core migrations under Data/Migrations and maintained via the DbContext snapshot."
+        },
+        "architectural_constraints": {
+            "guid_keys": "Entities use GUID primary keys with ValueGeneratedNever and row-version concurrency tokens; new tables should follow the same conventions.",
+            "split_queries": "ConversationRepository enables Include/ThenInclude with AsSplitQuery when loading message graphs—large graph fetches should keep using split queries to avoid cartesian explosions.",
+            "db_context_scope": "Repositories own DbContext interactions; higher layers should not call DbContext directly to preserve clean architecture boundaries."
+        }
+    },
+    "llm-orchestration": {
+        "required_patterns": {
+            "provider_aware_factory": "ConfiguredAIAgentFactory chooses between LMStudio and OpenRouter agents based on AppSettings LLM.Provider and exposes GetModelName().",
+            "agent_creation_flow": "StartChatUseCase obtains an IChatAgent from IAIAgentFactory.CreateAgentAsync, registers threads, sends user messages, and captures responses.",
+            "tool_forwarding": "ObsidianAssistantService and StartChatUseCase both enumerate MCP tools via IMcpClientProvider and attach them when creating ChatClientAgent instances."
+        },
+        "architectural_constraints": {
+            "use_ilmmclientfactory": "Outbound chat clients are built through ILlmClientFactory (LmStudioClientFactory/OpenRouterClientFactory) to ensure Microsoft Agent Framework AsIChatClient adapters are applied.",
+            "respect_default_instructions": "ObsidianAssistantService injects default agent instructions; new services should reuse AgentInstructions.ObsidianAssistant unless a new persona is justified.",
+            "persist_threads": "Agent threads must be stored on Conversation.ThreadId via EnsureThreadAsync so future prompts reuse context; ad-hoc agent calls without thread persistence break continuity."
+        }
+    },
+    "vault-integration": {
+        "required_patterns": {
+            "mcp_tool_execution": "McpVaultToolExecutor wraps Model Context Protocol tool calls (obsidian_append_content, obsidian_delete_file, etc.) and returns OperationResult values.",
+            "path_normalization": "VaultPathResolver normalizes and resolves candidate paths using BasicVaultPathNormalizer plus MCP list tooling before any file operation proceeds.",
+            "path_matching_keys": "Path normalization relies on CreateMatchKey/Normalize from IVaultPathNormalizer implementations to compare user input with vault entries."
+        },
+        "architectural_constraints": {
+            "only_via_executor": "Vault modifications must go through IVaultToolExecutor to enforce MCP gateway mediation—direct filesystem or HttpClient access would bypass audit trails.",
+            "handle_missing_mcp": "Both McpVaultToolExecutor and VaultPathResolver log and return graceful fallbacks when MCP is unavailable; new features must respect those guardrails instead of throwing.",
+            "tool_name_contract": "Tool invocations use the obsidian_* naming contract; introducing new operations requires corresponding MCP tool definitions."
+        }
+    },
+    "ui": {
+        "required_patterns": {
+            "interactive_server_components": "Primary pages such as Components/Pages/Chat.razor use @rendermode InteractiveServer and inject services through DI.",
+            "hub_connection_management": "Chat.razor builds a HubConnection to /chathub, batches tokens, and updates component state via InvokeAsync/StateHasChanged.",
+            "service_gateway": "UI logic calls backend endpoints exclusively through IChatService, which wraps HttpClient and maps API payloads to UI models."
+        },
+        "architectural_constraints": {
+            "model_usage": "Blazor components consume strongly typed records from ObsidianAI.Web/Models; raw JSON parsing in components is avoided.",
+            "ui_state_updates": "Streaming state transitions (ReceiveToken, Metadata, MessageComplete) are centralized in Chat.razor; new components should emit events through the same message list rather than managing parallel state.",
+            "signalr_rendermode": "Components expecting realtime updates must remain server-rendered; switching to Blazor WASM would break the existing SignalR pipeline."
+        }
+    },
+    "streaming-pipeline": {
+        "required_patterns": {
+            "sse_to_signalr_bridge": "ChatHub.StreamMessage proxies the API's SSE stream, decoding event/data lines and forwarding them to SignalR clients (ReceiveToken, Metadata, StatusUpdate).",
+            "token_buffering": "Token batching is implemented via StringBuilder buffers flushed after 50 characters to reduce UI churn while preserving stream continuity.",
+            "metadata_promotion": "Streaming metadata events promote optimistic client-side messages to persisted IDs (PromoteUserMessage/PromoteAssistantMessage in Chat.razor)."
+        },
+        "architectural_constraints": {
+            "event_contract": "StreamingEventWriter emits tool_call, metadata, error, and token events; ChatHub and Chat.razor must continue to handle these names consistently.",
+            "flush_on_completion": "SSE consumers flush buffers and send MessageComplete only after [DONE]; any alternative pipeline must preserve that signal for UI cleanup.",
+            "respect_cancellation": "ChatHub forwards Context.ConnectionAborted to HttpClient.SendAsync to tear down streams promptly—new streaming features should propagate cancellation tokens the same way."
+        }
+    },
+    "orchestration": {
+        "required_patterns": {
+            "aspire_resource_model": "ObsidianAI.AppHost/AppHost.cs builds a DistributedApplication that starts the MCP gateway executable and wires api/web projects with WithReference().",
+            "service_defaults": "Projects opt into shared observability and health checks via builder.AddServiceDefaults() defined in ObsidianAI.ServiceDefaults/Extensions.cs."
+        },
+        "architectural_constraints": {
+            "mcp_endpoint_env": "AppHost injects MCP_ENDPOINT into the API container; new services needing MCP must read the same environment variable convention.",
+            "resilience_defaults": "Http clients inherit standard resilience and service discovery middleware from ServiceDefaults; bypassing ConfigureHttpClientDefaults would forfeit retries and discovery."
+        }
+    }
+}

@@ -1,0 +1,387 @@
+{
+    "solution-config": [
+        "./docker-compose.yml",
+        "./ObsidianAI.sln"
+    ],
+    "root-environment": [
+        "./.dockerignore",
+        "./.env",
+        "./.env.example",
+        "./.gitignore"
+    ],
+    "project-documentation": [
+        "./README.md",
+        "./docs/AgendThread.md",
+        "./docs/conversation-history.md",
+        "./docs/interface-prompt.md",
+        "./docs/mvp.md",
+        "./docs/obsidian-ai-ui-light.html",
+        "./docs/Obsidian-Chat-Interface.md",
+        "./docs/output.md",
+        "./docs/Technical-Overview-15-10-25.md"
+    ],
+    "analysis-output": [
+        "./.results/1-determine-techstack.md",
+        "./.results/1-techstack.md"
+    ],
+    "api-config-json": [
+        "./ObsidianAI.Api/appsettings.Development.json",
+        "./ObsidianAI.Api/appsettings.json"
+    ],
+    "api-docker": [
+        "./ObsidianAI.Api/Dockerfile"
+    ],
+    "api-project": [
+        "./ObsidianAI.Api/ObsidianAI.Api.csproj",
+        "./ObsidianAI.Api/ObsidianAI.Api.csproj.user"
+    ],
+    "api-http-samples": [
+        "./ObsidianAI.Api/ObsidianAI.Api.http"
+    ],
+    "api-entrypoint": [
+        "./ObsidianAI.Api/Program.cs"
+    ],
+    "api-configuration": [
+        "./ObsidianAI.Api/Configuration/AgentInstructions.cs",
+        "./ObsidianAI.Api/Configuration/EndpointRegistration.cs",
+        "./ObsidianAI.Api/Configuration/ServiceRegistration.cs"
+    ],
+    "api-health-checks": [
+        "./ObsidianAI.Api/HealthChecks/LlmHealthCheck.cs"
+    ],
+    "api-helpers": [
+        "./ObsidianAI.Api/Helpers/PathNormalizer.cs"
+    ],
+    "api-models": [
+        "./ObsidianAI.Api/Models/Records.cs"
+    ],
+    "api-service-contracts": [
+        "./ObsidianAI.Api/Services/ILlmClientFactory.cs"
+    ],
+    "api-service-implementations": [
+        "./ObsidianAI.Api/Services/LmStudioClientFactory.cs",
+        "./ObsidianAI.Api/Services/McpClientService.cs",
+        "./ObsidianAI.Api/Services/ObsidianAssistantService.cs",
+        "./ObsidianAI.Api/Services/OpenRouterClientFactory.cs"
+    ],
+    "api-streaming": [
+        "./ObsidianAI.Api/Streaming/StreamingEventWriter.cs"
+    ],
+    "api-launchsettings": [
+        "./ObsidianAI.Api/Properties/launchSettings.json"
+    ],
+    "aspire-orchestration": [
+        "./ObsidianAI.AppHost/AppHost.cs"
+    ],
+    "aspire-config": [
+        "./ObsidianAI.AppHost/appsettings.Development.json",
+        "./ObsidianAI.AppHost/appsettings.json"
+    ],
+    "aspire-project": [
+        "./ObsidianAI.AppHost/ObsidianAI.AppHost.csproj"
+    ],
+    "aspire-launchsettings": [
+        "./ObsidianAI.AppHost/Properties/launchSettings.json"
+    ],
+    "application-assembly-info": [
+        "./ObsidianAI.Application/AssemblyInfo.cs"
+    ],
+    "application-project": [
+        "./ObsidianAI.Application/ObsidianAI.Application.csproj"
+    ],
+    "application-contracts": [
+        "./ObsidianAI.Application/Contracts/ConversationPersistenceContext.cs",
+        "./ObsidianAI.Application/Contracts/SearchResponse.cs",
+        "./ObsidianAI.Application/Contracts/SearchResultItem.cs",
+        "./ObsidianAI.Application/Contracts/StartChatResult.cs",
+        "./ObsidianAI.Application/Contracts/VaultContentsResponse.cs"
+    ],
+    "application-di": [
+        "./ObsidianAI.Application/DI/ServiceCollectionExtensions.cs"
+    ],
+    "application-dtos": [
+        "./ObsidianAI.Application/DTOs/ConversationDetailDto.cs",
+        "./ObsidianAI.Application/DTOs/ConversationDto.cs",
+        "./ObsidianAI.Application/DTOs/MessageDto.cs"
+    ],
+    "application-mappers": [
+        "./ObsidianAI.Application/Mappers/ConversationMapper.cs"
+    ],
+    "application-services": [
+        "./ObsidianAI.Application/Services/BasicVaultPathNormalizer.cs",
+        "./ObsidianAI.Application/Services/IMcpClientProvider.cs",
+        "./ObsidianAI.Application/Services/IVaultPathResolver.cs",
+        "./ObsidianAI.Application/Services/PathNormalizer.cs",
+        "./ObsidianAI.Application/Services/RegexFileOperationExtractor.cs",
+        "./ObsidianAI.Application/Services/VaultPathResolver.cs"
+    ],
+    "application-usecases": [
+        "./ObsidianAI.Application/UseCases/ArchiveConversationUseCase.cs",
+        "./ObsidianAI.Application/UseCases/CreateConversationUseCase.cs",
+        "./ObsidianAI.Application/UseCases/DeleteConversationUseCase.cs",
+        "./ObsidianAI.Application/UseCases/ListConversationsUseCase.cs",
+        "./ObsidianAI.Application/UseCases/ListVaultContentsUseCase.cs",
+        "./ObsidianAI.Application/UseCases/LoadConversationUseCase.cs",
+        "./ObsidianAI.Application/UseCases/ModifyVaultUseCase.cs",
+        "./ObsidianAI.Application/UseCases/SearchVaultUseCase.cs",
+        "./ObsidianAI.Application/UseCases/StartChatUseCase.cs",
+        "./ObsidianAI.Application/UseCases/StreamChatUseCase.cs",
+        "./ObsidianAI.Application/UseCases/UpdateConversationUseCase.cs",
+        "./ObsidianAI.Application/UseCases/UpdateMessageArtifactsUseCase.cs"
+    ],
+    "domain-assembly-info": [
+        "./ObsidianAI.Domain/AssemblyInfo.cs"
+    ],
+    "domain-project": [
+        "./ObsidianAI.Domain/ObsidianAI.Domain.csproj"
+    ],
+    "domain-entities": [
+        "./ObsidianAI.Domain/Entities/ActionCardRecord.cs",
+        "./ObsidianAI.Domain/Entities/Conversation.cs",
+        "./ObsidianAI.Domain/Entities/ConversationEnums.cs",
+        "./ObsidianAI.Domain/Entities/FileOperationRecord.cs",
+        "./ObsidianAI.Domain/Entities/Message.cs",
+        "./ObsidianAI.Domain/Entities/PlannedActionRecord.cs"
+    ],
+    "domain-models": [
+        "./ObsidianAI.Domain/Models/ChatInput.cs",
+        "./ObsidianAI.Domain/Models/ChatStreamEvent.cs",
+        "./ObsidianAI.Domain/Models/ConversationMessage.cs",
+        "./ObsidianAI.Domain/Models/FileOperation.cs",
+        "./ObsidianAI.Domain/Models/OperationResult.cs"
+    ],
+    "domain-ports": [
+        "./ObsidianAI.Domain/Ports/IAgentThreadProvider.cs",
+        "./ObsidianAI.Domain/Ports/IAIAgentFactory.cs",
+        "./ObsidianAI.Domain/Ports/IChatAgent.cs",
+        "./ObsidianAI.Domain/Ports/IConversationRepository.cs",
+        "./ObsidianAI.Domain/Ports/IMessageRepository.cs",
+        "./ObsidianAI.Domain/Ports/IVaultToolExecutor.cs"
+    ],
+    "domain-services": [
+        "./ObsidianAI.Domain/Services/IFileOperationExtractor.cs",
+        "./ObsidianAI.Domain/Services/IVaultPathNormalizer.cs"
+    ],
+    "infrastructure-assembly-info": [
+        "./ObsidianAI.Infrastructure/AssemblyInfo.cs"
+    ],
+    "infrastructure-project": [
+        "./ObsidianAI.Infrastructure/ObsidianAI.Infrastructure.csproj"
+    ],
+    "infrastructure-agents": [
+        "./ObsidianAI.Infrastructure/Agents/InMemoryAgentThreadProvider.cs"
+    ],
+    "infrastructure-configuration": [
+        "./ObsidianAI.Infrastructure/Configuration/AppSettings.cs",
+        "./ObsidianAI.Infrastructure/Configuration/LlmSettings.cs",
+        "./ObsidianAI.Infrastructure/Configuration/LmStudioSettings.cs",
+        "./ObsidianAI.Infrastructure/Configuration/OpenRouterSettings.cs"
+    ],
+    "infrastructure-data-context": [
+        "./ObsidianAI.Infrastructure/Data/DesignTimeObsidianAIDbContextFactory.cs",
+        "./ObsidianAI.Infrastructure/Data/ObsidianAIDbContext.cs"
+    ],
+    "infrastructure-migrations": [
+        "./ObsidianAI.Infrastructure/Data/Migrations/20251016033711_InitialCreate.Designer.cs",
+        "./ObsidianAI.Infrastructure/Data/Migrations/20251016033711_InitialCreate.cs",
+        "./ObsidianAI.Infrastructure/Data/Migrations/20251016101818_AddThreadIdToConversation.Designer.cs",
+        "./ObsidianAI.Infrastructure/Data/Migrations/20251016101818_AddThreadIdToConversation.cs",
+        "./ObsidianAI.Infrastructure/Data/Migrations/ObsidianAIDbContextModelSnapshot.cs"
+    ],
+    "infrastructure-repositories": [
+        "./ObsidianAI.Infrastructure/Data/Repositories/ConversationRepository.cs",
+        "./ObsidianAI.Infrastructure/Data/Repositories/MessageRepository.cs"
+    ],
+    "infrastructure-di": [
+        "./ObsidianAI.Infrastructure/DI/ServiceCollectionExtensions.cs"
+    ],
+    "infrastructure-healthchecks": [
+        "./ObsidianAI.Infrastructure/HealthChecks/LlmHealthCheck.cs",
+        "./ObsidianAI.Infrastructure/HealthChecks/McpHealthCheck.cs"
+    ],
+    "infrastructure-llm": [
+        "./ObsidianAI.Infrastructure/LLM/ConfiguredAIAgentFactory.cs",
+        "./ObsidianAI.Infrastructure/LLM/ILlmClientFactory.cs",
+        "./ObsidianAI.Infrastructure/LLM/LmStudioChatAgent.cs",
+        "./ObsidianAI.Infrastructure/LLM/OpenRouterChatAgent.cs"
+    ],
+    "infrastructure-vault": [
+        "./ObsidianAI.Infrastructure/Vault/McpVaultToolExecutor.cs",
+        "./ObsidianAI.Infrastructure/Vault/NullVaultToolExecutor.cs"
+    ],
+    "service-defaults-extensions": [
+        "./ObsidianAI.ServiceDefaults/Extensions.cs"
+    ],
+    "service-defaults-project": [
+        "./ObsidianAI.ServiceDefaults/ObsidianAI.ServiceDefaults.csproj"
+    ],
+    "tests-project": [
+        "./ObsidianAI.Tests/ObsidianAI.Tests.csproj"
+    ],
+    "tests-application": [
+        "./ObsidianAI.Tests/Application/ArchiveConversationUseCaseTests.cs",
+        "./ObsidianAI.Tests/Application/ListConversationsUseCaseTests.cs",
+        "./ObsidianAI.Tests/Application/LoadConversationUseCaseTests.cs",
+        "./ObsidianAI.Tests/Application/UpdateConversationUseCaseTests.cs",
+        "./ObsidianAI.Tests/Application/UpdateMessageArtifactsUseCaseTests.cs"
+    ],
+    "tests-infrastructure": [
+        "./ObsidianAI.Tests/Infrastructure/ConversationRepositoryTests.cs"
+    ],
+    "tests-support": [
+        "./ObsidianAI.Tests/Support/SqliteDbContextFactory.cs",
+        "./ObsidianAI.Tests/Support/TestEntityFactory.cs"
+    ],
+    "web-appsettings": [
+        "./ObsidianAI.Web/appsettings.Development.json",
+        "./ObsidianAI.Web/appsettings.json"
+    ],
+    "web-dockerfile": [
+        "./ObsidianAI.Web/Dockerfile"
+    ],
+    "web-project": [
+        "./ObsidianAI.Web/ObsidianAI.Web.csproj",
+        "./ObsidianAI.Web/ObsidianAI.Web.csproj.user"
+    ],
+    "web-program": [
+        "./ObsidianAI.Web/Program.cs"
+    ],
+    "web-hubs": [
+        "./ObsidianAI.Web/Hubs/ChatHub.cs"
+    ],
+    "web-services": [
+        "./ObsidianAI.Web/Services/ChatService.cs",
+        "./ObsidianAI.Web/Services/IChatService.cs",
+        "./ObsidianAI.Web/Services/TextDecoderService.cs"
+    ],
+    "web-models": [
+        "./ObsidianAI.Web/Models/ActionCardData.cs",
+        "./ObsidianAI.Web/Models/ChatMessage.cs",
+        "./ObsidianAI.Web/Models/ConversationDetail.cs",
+        "./ObsidianAI.Web/Models/ConversationMetadata.cs",
+        "./ObsidianAI.Web/Models/ConversationSummary.cs",
+        "./ObsidianAI.Web/Models/FileOperationData.cs",
+        "./ObsidianAI.Web/Models/MessageArtifacts.cs",
+        "./ObsidianAI.Web/Models/ModifyContracts.cs",
+        "./ObsidianAI.Web/Models/SearchResultData.cs",
+        "./ObsidianAI.Web/Models/VaultBrowserData.cs"
+    ],
+    "web-components-root": [
+        "./ObsidianAI.Web/Components/App.razor",
+        "./ObsidianAI.Web/Components/_Imports.razor"
+    ],
+    "web-components-routes": [
+        "./ObsidianAI.Web/Components/Routes.razor"
+    ],
+    "web-components-layout": [
+        "./ObsidianAI.Web/Components/Layout/ChatLayout.razor",
+        "./ObsidianAI.Web/Components/Layout/MainLayout.razor",
+        "./ObsidianAI.Web/Components/Layout/MainLayout.razor.css",
+        "./ObsidianAI.Web/Components/Layout/NavMenu.razor",
+        "./ObsidianAI.Web/Components/Layout/NavMenu.razor.css"
+    ],
+    "web-components-pages": [
+        "./ObsidianAI.Web/Components/Pages/Chat.razor",
+        "./ObsidianAI.Web/Components/Pages/Counter.razor",
+        "./ObsidianAI.Web/Components/Pages/Error.razor",
+        "./ObsidianAI.Web/Components/Pages/Home.razor",
+        "./ObsidianAI.Web/Components/Pages/Weather.razor"
+    ],
+    "web-components-shared": [
+        "./ObsidianAI.Web/Components/Shared/ActionCard.razor",
+        "./ObsidianAI.Web/Components/Shared/ChatArea.razor",
+        "./ObsidianAI.Web/Components/Shared/ChatHeader.razor",
+        "./ObsidianAI.Web/Components/Shared/ChatInput.razor",
+        "./ObsidianAI.Web/Components/Shared/ConversationSidebar.razor",
+        "./ObsidianAI.Web/Components/Shared/FileOperationResult.razor",
+        "./ObsidianAI.Web/Components/Shared/MarkdownContent.razor",
+        "./ObsidianAI.Web/Components/Shared/MessageBubble.razor",
+        "./ObsidianAI.Web/Components/Shared/PrivacyWarning.razor",
+        "./ObsidianAI.Web/Components/Shared/SearchResult.razor",
+        "./ObsidianAI.Web/Components/Shared/StatusIndicator.razor",
+        "./ObsidianAI.Web/Components/Shared/VaultBrowser.razor",
+        "./ObsidianAI.Web/Components/Shared/VaultTreeNode.razor"
+    ],
+    "web-properties": [
+        "./ObsidianAI.Web/Properties/launchSettings.json"
+    ],
+    "web-styles": [
+        "./ObsidianAI.Web/wwwroot/app.css",
+        "./ObsidianAI.Web/wwwroot/css/chat.css"
+    ],
+    "web-static-assets": [
+        "./ObsidianAI.Web/wwwroot/favicon.png"
+    ],
+    "web-scripts": [
+        "./ObsidianAI.Web/wwwroot/js/chat.js"
+    ],
+    "web-vendor-bootstrap-css": [
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.min.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.min.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.rtl.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.rtl.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.rtl.min.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-grid.rtl.min.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.min.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.min.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.rtl.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.rtl.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.rtl.min.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-reboot.rtl.min.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.min.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.min.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.rtl.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.rtl.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.rtl.min.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap-utilities.rtl.min.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap.min.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap.min.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap.rtl.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap.rtl.css.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap.rtl.min.css",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/css/bootstrap.rtl.min.css.map"
+    ],
+    "web-vendor-bootstrap-js": [
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.bundle.js",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.bundle.js.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.bundle.min.js",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.bundle.min.js.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.esm.js",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.esm.js.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.esm.min.js",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.esm.min.js.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.js",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.js.map",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.min.js",
+        "./ObsidianAI.Web/wwwroot/lib/bootstrap/dist/js/bootstrap.min.js.map"
+    ],
+    "sample-databases": [
+        "./ObsidianAI.Api/obsidianai.db",
+        "./ObsidianAI.Infrastructure/obsidianai.db"
+    ],
+    "visualstudio-cache": [
+        "./.vs/ObsidianAI/CopilotIndices/17.14.995.13737/CodeChunks.db",
+        "./.vs/ObsidianAI/CopilotIndices/17.14.995.13737/SemanticSymbols.db",
+        "./.vs/ObsidianAI/DesignTimeBuild/.dtbcache.v2",
+        "./.vs/ObsidianAI/FileContentIndex/c6b9d2e1-d7ac-4d9e-903c-ac07be9fb4b3.vsidx",
+        "./.vs/ObsidianAI/FileContentIndex/c7848f16-27fc-4db3-9f7f-128c6fb72e84.vsidx",
+        "./.vs/ObsidianAI/FileContentIndex/c963326e-3b53-4b1c-ad31-d948be754eb8.vsidx",
+        "./.vs/ObsidianAI/solutionOpened",
+        "./.vs/ObsidianAI/v17/.futdcache.v2",
+        "./.vs/ObsidianAI/v17/.suo",
+        "./.vs/ObsidianAI/v17/DocumentLayout.backup.json",
+        "./.vs/ObsidianAI/v17/DocumentLayout.json",
+        "./.vs/ObsidianAI/v17/HierarchyCache.v1.txt",
+        "./.vs/ProjectEvaluation/obsidianai.metadata.v9.bin",
+        "./.vs/ProjectEvaluation/obsidianai.projects.v9.bin",
+        "./.vs/ProjectEvaluation/obsidianai.strings.v9.bin"
+    ]
+}

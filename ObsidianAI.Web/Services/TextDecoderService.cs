@@ -25,31 +25,56 @@ public static class TextDecoderService
             return text;
 
         // Handle surrogate pairs like \ud83d\udca1
-        var result = UnicodeRegex.Replace(text, match =>
+        // Match pairs of \uXXXX sequences
+        var pairRegex = new Regex(@"\\u([dD][89aAbB][0-9A-Fa-f]{2})\\u([dD][c-fC-F][0-9A-Fa-f]{2})", RegexOptions.Compiled);
+
+        // First, decode surrogate pairs
+        text = pairRegex.Replace(text, match =>
         {
-            var hex = match.Groups[1].Value;
-            var value = Convert.ToInt32(hex, 16);
-            return char.ConvertFromUtf32(value);
+            try
+            {
+                var high = Convert.ToInt32(match.Groups[1].Value, 16);
+                var low = Convert.ToInt32(match.Groups[2].Value, 16);
+
+                // Validate surrogate range
+                if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 && low <= 0xDFFF)
+                {
+                    var codePoint = 0x10000 + ((high - 0xD800) * 0x400) + (low - 0xDC00);
+                    return char.ConvertFromUtf32(codePoint);
+                }
+
+                // If not valid surrogate pair, return original
+                return match.Value;
+            }
+            catch
+            {
+                // If conversion fails, return original text
+                return match.Value;
+            }
         });
 
-        // Combine surrogate pairs
-        var chars = result.ToCharArray();
-        var builder = new System.Text.StringBuilder();
-        
-        for (int i = 0; i < chars.Length; i++)
+        // Then decode remaining single \uXXXX sequences (non-surrogate characters)
+        text = UnicodeRegex.Replace(text, match =>
         {
-            if (char.IsHighSurrogate(chars[i]) && i + 1 < chars.Length && char.IsLowSurrogate(chars[i + 1]))
+            try
             {
-                var codePoint = char.ConvertToUtf32(chars[i], chars[i + 1]);
-                builder.Append(char.ConvertFromUtf32(codePoint));
-                i++; // Skip the low surrogate
-            }
-            else
-            {
-                builder.Append(chars[i]);
-            }
-        }
+                var hex = match.Groups[1].Value;
+                var value = Convert.ToInt32(hex, 16);
 
-        return builder.ToString();
+                // Skip surrogate values (they should have been handled above)
+                if (value >= 0xD800 && value <= 0xDFFF)
+                {
+                    return match.Value; // Keep original if it's an unpaired surrogate
+                }
+
+                return char.ConvertFromUtf32(value);
+            }
+            catch
+            {
+                return match.Value;
+            }
+        });
+
+        return text;
     }
 }

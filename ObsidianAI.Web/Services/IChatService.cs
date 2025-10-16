@@ -22,28 +22,28 @@ public interface IChatService
     /// <param name="message">The message to send.</param>
     /// <returns>A ChatMessage object, potentially with component data.</returns>
     Task<ChatMessage> SendMessageAndGetResponseAsync(string message, Guid? conversationId = null);
-    
+
     /// <summary>
     /// Searches the vault for content matching the query.
     /// </summary>
     /// <param name="query">The search query.</param>
     /// <returns>A collection of search results.</returns>
     Task<SearchResultCollection> SearchVaultAsync(string query);
-    
+
     /// <summary>
     /// Performs a reorganization operation on the vault.
     /// </summary>
     /// <param name="request">The reorganization request details.</param>
     /// <returns>The result of the reorganization operation.</returns>
     Task<ReorganizeResponse> ReorganizeAsync(ReorganizeRequest request);
-    
+
     /// <summary>
     /// Creates a new note in the vault.
     /// </summary>
     /// <param name="request">The note creation request.</param>
     /// <returns>The result of the note creation operation.</returns>
     Task<CreateNoteResponse> CreateNoteAsync(CreateNoteRequest request);
-    
+
     /// <summary>
     /// Gets the list of available quick actions.
     /// </summary>
@@ -84,7 +84,7 @@ public interface IChatService
     /// Retrieves a serialized export payload for the conversation.
     /// </summary>
     Task<string?> ExportConversationAsync(Guid conversationId);
-    
+
     /// <summary>
     /// Gets the current LLM provider name from the backend.
     /// </summary>
@@ -103,6 +103,13 @@ public interface IChatService
     /// <param name="messageId">Identifier of the message to update.</param>
     /// <param name="update">Artifact payload containing action card and/or file operation data.</param>
     Task UpdateMessageArtifactsAsync(Guid messageId, MessageArtifactsUpdate update);
+
+    /// <summary>
+    /// Browses the vault contents at the specified path.
+    /// </summary>
+    /// <param name="path">Optional folder path to browse. If null, browses root.</param>
+    /// <returns>Vault contents data with items and current path.</returns>
+    Task<VaultContentsData> BrowseVaultAsync(string? path = null);
 }
 
 /// <summary>
