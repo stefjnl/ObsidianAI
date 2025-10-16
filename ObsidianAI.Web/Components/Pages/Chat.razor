@@ -6,7 +6,9 @@
 @using ObsidianAI.Web.Components.Shared
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Text.RegularExpressions
+@using System.Text.Json
 @using Microsoft.Extensions.Logging
+@using Microsoft.AspNetCore.WebUtilities
 @inject IChatService ChatService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
@@ -15,6 +17,18 @@
 <ChatHeader OnVaultClick="OpenVault" OnSettingsClick="OpenSettings" OnHistoryClick="ShowHistory" />
 
 <PrivacyWarning IsVisible="@isOpenRouter" />
+
+@if (isSidebarOpen)
+{
+    <ConversationSidebar
+        Conversations="conversationSummaries"
+        SelectedConversationId="currentConversationId"
+    IsLoading="isLoadingConversations"
+        OnConversationSelected="HandleConversationSelectedAsync"
+        OnClose="CloseSidebar"
+        OnNewConversation="HandleNewConversationAsync"
+        OnDeleteConversation="HandleDeleteConversationAsync" />
+}
 
 <ChatArea Messages="@conversationHistory"
           OnActionConfirmed="HandleActionConfirmed"
@@ -40,6 +54,13 @@
     private bool isOpenRouter = false;
     private int tokenBatchCount = 0;
     private const int TokenBatchSize = 3;
+    private Guid? currentConversationId;
+    private List<ConversationSummary> conversationSummaries = new();
+    private bool isSidebarOpen;
+    private bool isLoadingConversations;
+    private bool isLoadingConversation;
+    private string? pendingUserMessageClientId;
+    private string? pendingAssistantMessageClientId;
     private static readonly Regex FileOpPattern1 = new(
         @"(?i)(append|create|write|modify|patch|delete)\s+to\s+file:\s*[`""']?([^`""'\n]+\.md)[`""']?\s+with\s+content:\s*[""']([^""'\n]+)[""']",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
@@ -58,6 +79,8 @@
         await FetchLlmProvider();
         await InitializeSignalR();
         await LoadQuickActions();
+        await RefreshConversationListAsync();
+        await TryLoadConversationFromQueryAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -112,6 +135,11 @@
                     }
                 }
             });
+        });
+
+        hubConnection.On<string>("Metadata", metadataJson =>
+        {
+            _ = HandleMetadataAsync(metadataJson);
         });
 
         hubConnection.On<object>("StatusUpdate", (update) =>
@@ -236,10 +264,97 @@
         StateHasChanged();
     }
 
+    private async Task EnsureConversationInitializedAsync()
+    {
+        if (currentConversationId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            isLoadingConversation = true;
+            var conversationId = await ChatService.CreateConversationAsync();
+            currentConversationId = conversationId;
+            await RefreshConversationListAsync();
+            UpdateConversationRoute(conversationId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to initialize conversation");
+            throw;
+        }
+        finally
+        {
+            isLoadingConversation = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshConversationListAsync()
+    {
+        try
+        {
+            isLoadingConversations = true;
+            var summaries = await ChatService.ListConversationsAsync();
+            conversationSummaries = summaries?.ToList() ?? new List<ConversationSummary>();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load conversation summaries");
+        }
+        finally
+        {
+            isLoadingConversations = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TryLoadConversationFromQueryAsync()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (string.IsNullOrEmpty(uri.Query))
+        {
+            return;
+        }
+
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("conversationId", out var conversationValues) &&
+            Guid.TryParse(conversationValues.FirstOrDefault(), out var conversationId))
+        {
+            await LoadConversationAsync(conversationId);
+        }
+    }
+
+    private async Task LoadConversationAsync(Guid conversationId)
+    {
+        try
+        {
+            isLoadingConversation = true;
+            var detail = await ChatService.LoadConversationAsync(conversationId);
+            currentConversationId = detail.Id;
+            conversationHistory = detail.Messages.ToList();
+            await RefreshConversationListAsync();
+            UpdateConversationRoute(detail.Id);
+            await ScrollToBottom();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load conversation {ConversationId}", conversationId);
+        }
+        finally
+        {
+            isLoadingConversation = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task SendMessage()
     {
         if (string.IsNullOrWhiteSpace(currentMessage) || isProcessing || isStreaming)
             return;
+
+        await EnsureConversationInitializedAsync();
 
         var userMessage = new ChatMessage
         {
@@ -249,6 +364,7 @@
         };
 
         conversationHistory.Add(userMessage);
+        pendingUserMessageClientId = userMessage.Id;
         var messageToSend = currentMessage;
         currentMessage = string.Empty;
         isProcessing = true;
@@ -265,6 +381,7 @@
         };
 
         conversationHistory.Add(currentAiMessage);
+        pendingAssistantMessageClientId = currentAiMessage.Id;
         StateHasChanged();
         await ScrollToBottom();
 
@@ -273,7 +390,7 @@
             if (hubConnection != null && hubConnection.State == HubConnectionState.Connected)
             {
                 // Send message via SignalR for streaming
-                await hubConnection.SendAsync("StreamMessage", messageToSend, conversationHistory);
+                await hubConnection.SendAsync("StreamMessage", messageToSend, currentConversationId?.ToString(), conversationHistory);
             }
             else
             {
@@ -315,6 +432,173 @@
         currentMessage = action.Prefix;
         StateHasChanged();
         return Task.CompletedTask;
+    }
+
+    private async Task HandleConversationSelectedAsync(Guid conversationId)
+    {
+        isSidebarOpen = false;
+        if (currentConversationId == conversationId)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        if (conversationId == Guid.Empty)
+        {
+            await HandleNewConversationAsync();
+            return;
+        }
+
+        await LoadConversationAsync(conversationId);
+    }
+
+    private async Task HandleNewConversationAsync()
+    {
+        try
+        {
+            isLoadingConversation = true;
+            var conversationId = await ChatService.CreateConversationAsync();
+            currentConversationId = conversationId;
+            conversationHistory.Clear();
+            pendingAssistantMessageClientId = null;
+            pendingUserMessageClientId = null;
+            await RefreshConversationListAsync();
+            UpdateConversationRoute(conversationId);
+            isSidebarOpen = false;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to create new conversation");
+        }
+        finally
+        {
+            isLoadingConversation = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleDeleteConversationAsync(Guid conversationId)
+    {
+        try
+        {
+            await ChatService.DeleteConversationAsync(conversationId);
+            if (currentConversationId == conversationId)
+            {
+                currentConversationId = null;
+                conversationHistory.Clear();
+                ClearConversationRoute();
+            }
+            await RefreshConversationListAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete conversation {ConversationId}", conversationId);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private void CloseSidebar()
+    {
+        isSidebarOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleMetadataAsync(string metadataJson)
+    {
+        StreamingMetadata? metadata = null;
+        try
+        {
+            metadata = JsonSerializer.Deserialize<StreamingMetadata>(metadataJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch (JsonException ex)
+        {
+            Logger.LogError(ex, "Invalid metadata payload: {Metadata}", metadataJson);
+            return;
+        }
+
+        if (metadata == null)
+        {
+            return;
+        }
+
+        await InvokeAsync(async () =>
+        {
+            var conversationId = metadata.ConversationId;
+            if (!currentConversationId.HasValue || currentConversationId != conversationId)
+            {
+                currentConversationId = conversationId;
+                UpdateConversationRoute(conversationId);
+            }
+
+            if (!string.IsNullOrEmpty(pendingUserMessageClientId))
+            {
+                var userIndex = conversationHistory.FindLastIndex(m => m.Id == pendingUserMessageClientId);
+                if (userIndex >= 0)
+                {
+                    conversationHistory[userIndex] = conversationHistory[userIndex] with
+                    {
+                        Id = metadata.UserMessageId.ToString()
+                    };
+                }
+                pendingUserMessageClientId = null;
+            }
+
+            if (!string.IsNullOrEmpty(pendingAssistantMessageClientId))
+            {
+                var assistantIndex = conversationHistory.FindLastIndex(m => m.Id == pendingAssistantMessageClientId);
+                if (assistantIndex >= 0)
+                {
+                    var updatedMessage = conversationHistory[assistantIndex] with
+                    {
+                        Id = metadata.AssistantMessageId.ToString()
+                    };
+
+                    if (metadata.FileOperation != null)
+                    {
+                        updatedMessage = updatedMessage with
+                        {
+                            FileOperation = new FileOperationData
+                            {
+                                Action = metadata.FileOperation.Action,
+                                FilePath = metadata.FileOperation.FilePath
+                            }
+                        };
+                    }
+
+                    conversationHistory[assistantIndex] = updatedMessage;
+                    currentAiMessage = updatedMessage;
+                }
+
+                pendingAssistantMessageClientId = null;
+            }
+
+            await RefreshConversationListAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void UpdateConversationRoute(Guid conversationId)
+    {
+        var target = NavigationManager.GetUriWithQueryParameter("conversationId", conversationId.ToString());
+        NavigationManager.NavigateTo(target, replace: true);
+    }
+
+    private void ClearConversationRoute()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        if (string.IsNullOrEmpty(uri.Query))
+        {
+            return;
+        }
+
+        var baseUri = uri.GetLeftPart(UriPartial.Path);
+        NavigationManager.NavigateTo(baseUri, replace: true);
     }
 
     private async Task HandleActionConfirmed(string actionId)
@@ -717,15 +1001,25 @@
         StateHasChanged();
     }
 
-    private void ShowHistory()
+    private async Task ShowHistory()
     {
-        var historyMessage = new ChatMessage
-        {
-            Content = "History feature is coming soon!",
-            Sender = MessageSender.AI,
-            Timestamp = DateTime.UtcNow
-        };
-        conversationHistory.Add(historyMessage);
+        isSidebarOpen = true;
         StateHasChanged();
+
+        if (!isLoadingConversations)
+        {
+            try
+            {
+                await RefreshConversationListAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to refresh conversations when opening history");
+            }
+        }
     }
+
+    private sealed record StreamingMetadata(Guid ConversationId, Guid UserMessageId, Guid AssistantMessageId, StreamingFileOperation? FileOperation);
+
+    private sealed record StreamingFileOperation(string Action, string FilePath);
 }

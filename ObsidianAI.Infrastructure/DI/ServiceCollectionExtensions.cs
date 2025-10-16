@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -5,6 +6,8 @@ using Microsoft.Extensions.Options;
 using ObsidianAI.Application.Services;
 using ObsidianAI.Domain.Ports;
 using ObsidianAI.Infrastructure.Configuration;
+using ObsidianAI.Infrastructure.Data;
+using ObsidianAI.Infrastructure.Data.Repositories;
 using ObsidianAI.Infrastructure.LLM;
 using ObsidianAI.Infrastructure.Vault;
 
@@ -23,10 +26,14 @@ public static class ServiceCollectionExtensions
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddObsidianAI(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<AppSettings>(options =>
-        {
-            configuration.Bind(options);
-        });
+        services.Configure<AppSettings>(configuration);
+
+        var connectionString = configuration.GetConnectionString("ObsidianAI") ?? "Data Source=obsidianai.db";
+        services.AddDbContext<ObsidianAIDbContext>(options => options.UseSqlite(connectionString));
+
+        services.AddScoped<IConversationRepository, ConversationRepository>();
+        services.AddScoped<IMessageRepository, MessageRepository>();
+
         services.AddSingleton<IAIAgentFactory, ConfiguredAIAgentFactory>();
         services.AddSingleton<IVaultToolExecutor>(sp =>
         {

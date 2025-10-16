@@ -1,3 +1,4 @@
+using System;
 using ObsidianAI.Web.Models;
 
 namespace ObsidianAI.Web.Services;
@@ -12,7 +13,7 @@ public interface IChatService
     /// </summary>
     /// <param name="message">The message to send.</param>
     /// <returns>The response from the API.</returns>
-    Task<string> SendMessageAsync(string message);
+    Task<string> SendMessageAsync(string message, Guid? conversationId = null);
 
     /// <summary>
     /// Sends a message and gets a structured ChatMessage response, bypassing the streaming endpoint.
@@ -20,7 +21,7 @@ public interface IChatService
     /// </summary>
     /// <param name="message">The message to send.</param>
     /// <returns>A ChatMessage object, potentially with component data.</returns>
-    Task<ChatMessage> SendMessageAndGetResponseAsync(string message);
+    Task<ChatMessage> SendMessageAndGetResponseAsync(string message, Guid? conversationId = null);
     
     /// <summary>
     /// Searches the vault for content matching the query.
@@ -48,6 +49,26 @@ public interface IChatService
     /// </summary>
     /// <returns>A list of quick action options.</returns>
     Task<List<QuickAction>> GetQuickActionsAsync();
+
+    /// <summary>
+    /// Retrieves paginated conversation summaries.
+    /// </summary>
+    Task<IReadOnlyList<ConversationSummary>> ListConversationsAsync(int skip = 0, int take = 20);
+
+    /// <summary>
+    /// Loads a conversation with its persisted messages.
+    /// </summary>
+    Task<ConversationDetail> LoadConversationAsync(Guid conversationId);
+
+    /// <summary>
+    /// Creates a new conversation and returns its identifier.
+    /// </summary>
+    Task<Guid> CreateConversationAsync(string? title = null);
+
+    /// <summary>
+    /// Deletes a conversation from persistence.
+    /// </summary>
+    Task DeleteConversationAsync(Guid conversationId);
     
     /// <summary>
     /// Gets the conversation history.

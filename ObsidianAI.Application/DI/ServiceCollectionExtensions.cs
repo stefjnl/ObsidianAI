@@ -18,10 +18,15 @@ namespace ObsidianAI.Application.DI
         {
             services.AddSingleton<ObsidianAI.Domain.Services.IFileOperationExtractor, RegexFileOperationExtractor>();
             services.AddSingleton<ObsidianAI.Domain.Services.IVaultPathNormalizer, BasicVaultPathNormalizer>();
-            services.AddSingleton<StartChatUseCase>();
-            services.AddSingleton<StreamChatUseCase>();
-            services.AddSingleton<ModifyVaultUseCase>();
-            services.AddSingleton<SearchVaultUseCase>();
+
+            services.AddScoped<CreateConversationUseCase>();
+            services.AddScoped<LoadConversationUseCase>();
+            services.AddScoped<ListConversationsUseCase>();
+
+            services.AddScoped<StartChatUseCase>();
+            services.AddScoped<StreamChatUseCase>();
+            services.AddScoped<ModifyVaultUseCase>();
+            services.AddScoped<SearchVaultUseCase>();
             return services;
         }
     }
