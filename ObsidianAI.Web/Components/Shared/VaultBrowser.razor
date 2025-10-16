@@ -1,0 +1,147 @@
+@using ObsidianAI.Web.Models
+@using ObsidianAI.Web.Services
+@inject IChatService ChatService
+@inject ILogger<VaultBrowser> Logger
+
+<div class="vault-browser @(IsOpen ? "vault-browser-open" : "")">
+    <div class="vault-browser-header">
+        <h2>📁 Vault Browser</h2>
+        <button class="vault-close-btn" type="button" @onclick="OnClose" aria-label="Close vault browser">✕</button>
+    </div>
+    
+    <div class="vault-browser-content">
+        @if (IsLoading)
+        {
+            <div class="vault-loading">
+                <div class="vault-loading-spinner"></div>
+                <p>Loading vault contents...</p>
+            </div>
+        }
+        else if (HasError)
+        {
+            <div class="vault-error">
+                <p>⚠️ Failed to load vault contents</p>
+                <button class="btn btn-secondary" @onclick="() => LoadVaultContents()">Retry</button>
+            </div>
+        }
+        else if (Items.Count == 0)
+        {
+            <div class="vault-empty">
+                <p>📭 No files found in vault</p>
+            </div>
+        }
+        else
+        {
+            <div class="vault-breadcrumb">
+                <button class="vault-breadcrumb-btn" @onclick="() => LoadVaultContents(null)">
+                    🏠 Root
+                </button>
+            </div>
+            
+            <div class="vault-tree">
+                @foreach (var item in Items)
+                {
+                    <VaultTreeNode Item="item" 
+                                   Level="0"
+                                   OnItemClick="HandleItemClick"
+                                   OnFolderExpand="HandleFolderExpand" />
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+    
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+    
+    [Parameter]
+    public EventCallback<VaultItemData> OnFileSelected { get; set; }
+    
+    private List<VaultItemData> Items { get; set; } = new();
+    private bool IsLoading { get; set; }
+    private bool HasError { get; set; }
+    private string CurrentPath { get; set; } = "/";
+    
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsOpen && Items.Count == 0 && !IsLoading)
+        {
+            await LoadVaultContents();
+        }
+    }
+    
+    private async Task LoadVaultContents(string? path = null)
+    {
+        IsLoading = true;
+        HasError = false;
+        StateHasChanged();
+        
+        try
+        {
+            var contents = await ChatService.BrowseVaultAsync(path);
+            Items = ProcessVaultItems(contents.Items);
+            CurrentPath = contents.CurrentPath;
+            Logger.LogInformation("Loaded {Count} items from vault path: {Path}", Items.Count, CurrentPath);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load vault contents for path: {Path}", path);
+            HasError = true;
+            Items = new List<VaultItemData>();
+        }
+        finally
+        {
+            IsLoading = false;
+            StateHasChanged();
+        }
+    }
+    
+    private List<VaultItemData> ProcessVaultItems(List<VaultItemData> items)
+    {
+        // Items are already sorted from the API, just return them
+        return items;
+    }
+    
+    private async Task HandleFolderExpand(VaultItemData folder)
+    {
+        if (!folder.IsExpanded)
+        {
+            // Expand and load children
+            folder.IsExpanded = true;
+            StateHasChanged();
+            
+            try
+            {
+                var contents = await ChatService.BrowseVaultAsync(folder.Path);
+                folder.Children = ProcessVaultItems(contents.Items);
+                Logger.LogInformation("Loaded {Count} children for folder: {Path}", folder.Children.Count, folder.Path);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to load folder contents: {Path}", folder.Path);
+                folder.Children = new List<VaultItemData>();
+            }
+            
+            StateHasChanged();
+        }
+        else
+        {
+            // Collapse
+            folder.IsExpanded = false;
+            StateHasChanged();
+        }
+    }
+    
+    private async Task HandleItemClick(VaultItemData item)
+    {
+        if (item.Type == VaultItemType.File)
+        {
+            Logger.LogInformation("File selected: {Path}", item.Path);
+            await OnFileSelected.InvokeAsync(item);
+        }
+    }
+}

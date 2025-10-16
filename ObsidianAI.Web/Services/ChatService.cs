@@ -16,13 +16,13 @@ public class ChatService : IChatService
 {
     private readonly HttpClient _httpClient;
     private readonly ILogger<ChatService> _logger;
-    
+
     public ChatService(HttpClient httpClient, ILogger<ChatService> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
     }
-    
+
     /// <summary>
     /// Sends a message to the chat API and gets the response.
     /// </summary>
@@ -60,9 +60,9 @@ public class ChatService : IChatService
 
             var response = await _httpClient.PostAsJsonAsync("/chat", new { message, conversationId });
             response.EnsureSuccessStatusCode();
-            
+
             var apiResponse = await response.Content.ReadFromJsonAsync<ChatApiResponse>();
-            
+
             var messageId = (apiResponse?.AssistantMessageId ?? Guid.NewGuid()).ToString();
             var chatMessage = new ChatMessage
             {
@@ -74,14 +74,14 @@ public class ChatService : IChatService
                 FileOperation = apiResponse?.FileOperationResult,
                 IsPending = false
             };
-            
+
             _logger.LogInformation("Received structured response from API");
             return chatMessage;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error sending message to API");
-            
+
             // Return a user-friendly error message
             var fallbackId = Guid.NewGuid().ToString();
             return new ChatMessage
@@ -95,7 +95,7 @@ public class ChatService : IChatService
             };
         }
     }
-    
+
     /// <summary>
     /// Searches the vault for content matching the query.
     /// </summary>
@@ -106,12 +106,12 @@ public class ChatService : IChatService
         try
         {
             _logger.LogInformation("Searching vault with query: {Query}", query);
-            
+
             var response = await _httpClient.PostAsJsonAsync("/vault/search", new { query });
             response.EnsureSuccessStatusCode();
-            
+
             var searchResponse = await response.Content.ReadFromJsonAsync<SearchResponse>();
-            
+
             // Convert to our model
             var results = searchResponse?.Results?.Select(r => new SearchResultData
             {
@@ -125,7 +125,7 @@ public class ChatService : IChatService
                 Tags = r.Tags ?? new List<string>(),
                 RelevanceScore = r.Score
             }).ToList() ?? new List<SearchResultData>();
-            
+
             return new SearchResultCollection
             {
                 Results = results,
@@ -141,7 +141,7 @@ public class ChatService : IChatService
             throw;
         }
     }
-    
+
     /// <summary>
     /// Performs a reorganization operation on the vault.
     /// </summary>
@@ -152,7 +152,7 @@ public class ChatService : IChatService
         try
         {
             _logger.LogInformation("Performing reorganization operation: {Operation}", request.Operation);
-            
+
             var apiRequest = new
             {
                 operation = request.Operation,
@@ -164,12 +164,12 @@ public class ChatService : IChatService
                 }),
                 confirmationId = request.ConfirmationId
             };
-            
+
             var response = await _httpClient.PostAsJsonAsync("/vault/reorganize", apiRequest);
             response.EnsureSuccessStatusCode();
-            
+
             var apiResponse = await response.Content.ReadFromJsonAsync<ReorganizeApiResponse>();
-            
+
             // Convert to our model
             return new ReorganizeResponse
             {
@@ -190,7 +190,7 @@ public class ChatService : IChatService
             throw;
         }
     }
-    
+
     /// <summary>
     /// Creates a new note in the vault.
     /// </summary>
@@ -201,7 +201,7 @@ public class ChatService : IChatService
         try
         {
             _logger.LogInformation("Creating new note: {Title}", request.Title);
-            
+
             var apiRequest = new
             {
                 title = request.Title,
@@ -210,12 +210,12 @@ public class ChatService : IChatService
                 template = request.Template,
                 tags = request.Tags
             };
-            
+
             var response = await _httpClient.PostAsJsonAsync("/vault/create", apiRequest);
             response.EnsureSuccessStatusCode();
-            
+
             var apiResponse = await response.Content.ReadFromJsonAsync<CreateNoteApiResponse>();
-            
+
             return new CreateNoteResponse
             {
                 Success = apiResponse?.Success ?? false,
@@ -229,7 +229,7 @@ public class ChatService : IChatService
             throw;
         }
     }
-    
+
     /// <summary>
     /// Gets the list of available quick actions.
     /// </summary>
@@ -245,7 +245,7 @@ public class ChatService : IChatService
             new() { Id = "reorganize", Label = "Reorganize", Prefix = "Reorganize my vault by ", Icon = "🔄" },
             new() { Id = "summarize", Label = "Summarize", Prefix = "Summarize ", Icon = "📄" }
         };
-        
+
         return Task.FromResult(quickActions);
     }
 
@@ -466,7 +466,7 @@ public class ChatService : IChatService
             throw;
         }
     }
-    
+
     /// <summary>
     /// Gets the current LLM provider name from the backend.
     /// </summary>
@@ -588,7 +588,7 @@ public class ChatService : IChatService
     {
         return Enum.TryParse<TEnum>(value, true, out var parsed) ? parsed : fallback;
     }
-    
+
     private static string GetIconForFileExtension(string extension)
     {
         return extension.ToLowerInvariant() switch
@@ -671,6 +671,51 @@ public class ChatService : IChatService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error performing modify operation");
+            throw;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<VaultContentsData> BrowseVaultAsync(string? path = null)
+    {
+        try
+        {
+            var queryString = string.IsNullOrEmpty(path) ? "" : $"?path={Uri.EscapeDataString(path)}";
+            _logger.LogInformation("Browsing vault contents at path: {Path}", path ?? "root");
+
+            var response = await _httpClient.GetAsync($"/vault/browse{queryString}");
+            response.EnsureSuccessStatusCode();
+
+            var result = await response.Content.ReadFromJsonAsync<VaultBrowseApiResponse>();
+
+            if (result == null)
+            {
+                return new VaultContentsData
+                {
+                    Items = new List<VaultItemData>(),
+                    CurrentPath = path ?? "/"
+                };
+            }
+
+            var items = result.Items?.Select(item => new VaultItemData
+            {
+                Name = item.Name ?? string.Empty,
+                Path = item.Path ?? string.Empty,
+                Type = Enum.TryParse<VaultItemType>(item.Type, ignoreCase: true, out var type) ? type : VaultItemType.File,
+                Extension = item.Extension,
+                Size = item.Size,
+                LastModified = item.LastModified
+            }).ToList() ?? new List<VaultItemData>();
+
+            return new VaultContentsData
+            {
+                Items = items,
+                CurrentPath = result.CurrentPath ?? "/"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to browse vault at path: {Path}", path);
             throw;
         }
     }
@@ -890,4 +935,20 @@ internal record ArchiveConversationApiResponse
     public string Provider { get; init; } = string.Empty;
     public string ModelName { get; init; } = string.Empty;
     public int MessageCount { get; init; }
+}
+
+internal record VaultBrowseApiResponse
+{
+    public List<VaultItemApiResponse>? Items { get; init; }
+    public string? CurrentPath { get; init; }
+}
+
+internal record VaultItemApiResponse
+{
+    public string? Name { get; init; }
+    public string? Path { get; init; }
+    public string? Type { get; init; }
+    public string? Extension { get; init; }
+    public long? Size { get; init; }
+    public DateTime? LastModified { get; init; }
 }

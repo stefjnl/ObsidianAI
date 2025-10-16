@@ -40,6 +40,13 @@
         OnArchiveConversation="HandleArchiveConversationAsync" />
 }
 
+@if (isVaultBrowserOpen)
+{
+    <VaultBrowser IsOpen="isVaultBrowserOpen"
+                  OnClose="CloseVaultBrowser"
+                  OnFileSelected="HandleFileSelected" />
+}
+
 <ChatArea Messages="@conversationHistory"
           OnActionConfirmed="HandleActionConfirmed"
           OnActionCancelled="HandleActionCancelled"
@@ -70,6 +77,7 @@
     private List<ConversationSummary> conversationSummaries = new();
     private bool isSidebarOpen;
     private bool isLoadingConversations;
+    private bool isVaultBrowserOpen;
     private string? pendingUserMessageClientId;
     private string? pendingAssistantMessageClientId;
     private static readonly Regex FileOpPattern1 = new(
@@ -1224,14 +1232,23 @@
 
     private void OpenVault()
     {
-        var vaultMessage = new ChatMessage
-        {
-            Content = "Vault feature is coming soon!",
-            Sender = MessageSender.AI,
-            Timestamp = DateTime.UtcNow
-        };
-        conversationHistory.Add(vaultMessage);
+        isVaultBrowserOpen = true;
         StateHasChanged();
+    }
+
+    private void CloseVaultBrowser()
+    {
+        isVaultBrowserOpen = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleFileSelected(VaultItemData file)
+    {
+        // Insert file reference into chat message
+        currentMessage = $"Read the file: {file.Path}";
+        isVaultBrowserOpen = false;
+        StateHasChanged();
+        await Task.CompletedTask;
     }
 
     private void OpenSettings()

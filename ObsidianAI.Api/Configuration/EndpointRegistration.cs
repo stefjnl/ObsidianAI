@@ -439,6 +439,30 @@ public static class EndpointRegistration
             var result = await useCase.ExecuteAsync(request.Operation, request.FilePath, request.Content, cancellationToken).ConfigureAwait(false);
             return Results.Ok(new ModifyResponse(result.Success, result.Message, result.FilePath));
         });
+
+        app.MapGet("/vault/browse", async (
+            string? path,
+            ListVaultContentsUseCase useCase,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await useCase.ExecuteAsync(path, cancellationToken).ConfigureAwait(false);
+
+            var payload = new
+            {
+                items = result.Items.Select(item => new
+                {
+                    name = item.Name,
+                    path = item.Path,
+                    type = item.Type.ToString(),
+                    extension = item.Extension,
+                    size = item.Size,
+                    lastModified = item.LastModified
+                }),
+                currentPath = result.CurrentPath
+            };
+
+            return Results.Ok(payload);
+        });
     }
 
     private static ConversationPersistenceContext BuildPersistenceContext(ChatRequest request, string? userId, AppSettings appSettings, string modelName, string? threadId)

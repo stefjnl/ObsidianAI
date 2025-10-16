@@ -1,0 +1,92 @@
+@using ObsidianAI.Web.Models
+
+<div class="vault-tree-node" style="padding-left: @(Level * 16)px">
+    <div class="vault-item @(Item.Type == VaultItemType.Folder ? "vault-folder" : "vault-file")"
+         @onclick="HandleClick">
+        
+        @if (Item.Type == VaultItemType.Folder)
+        {
+            <span class="vault-expand-icon">@(Item.IsExpanded ? "▼" : "▶")</span>
+        }
+        else
+        {
+            <span class="vault-expand-icon"></span>
+        }
+        
+        <span class="vault-icon">@GetIcon()</span>
+        <span class="vault-name" title="@Item.Path">@Item.Name</span>
+        
+        @if (Item.Type == VaultItemType.File && Item.Size.HasValue)
+        {
+            <span class="vault-size">@FormatSize(Item.Size.Value)</span>
+        }
+    </div>
+    
+    @if (Item.IsExpanded && Item.Children.Count > 0)
+    {
+        <div class="vault-children">
+            @foreach (var child in Item.Children)
+            {
+                <VaultTreeNode Item="child"
+                               Level="Level + 1"
+                               OnItemClick="OnItemClick"
+                               OnFolderExpand="OnFolderExpand" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public VaultItemData Item { get; set; } = default!;
+    
+    [Parameter]
+    public int Level { get; set; }
+    
+    [Parameter]
+    public EventCallback<VaultItemData> OnItemClick { get; set; }
+    
+    [Parameter]
+    public EventCallback<VaultItemData> OnFolderExpand { get; set; }
+    
+    private string GetIcon()
+    {
+        if (Item.Type == VaultItemType.Folder)
+        {
+            return Item.IsExpanded ? "📂" : "📁";
+        }
+        
+        return Item.Extension?.ToLowerInvariant() switch
+        {
+            ".md" => "📝",
+            ".pdf" => "📕",
+            ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" => "🖼️",
+            ".mp4" or ".mov" or ".avi" => "🎬",
+            ".mp3" or ".wav" or ".flac" => "🎵",
+            ".zip" or ".rar" or ".7z" => "📦",
+            ".txt" => "📄",
+            ".json" or ".xml" or ".yaml" or ".yml" => "⚙️",
+            ".js" or ".ts" or ".py" or ".cs" or ".java" => "💻",
+            _ => "📄"
+        };
+    }
+    
+    private async Task HandleClick()
+    {
+        if (Item.Type == VaultItemType.Folder)
+        {
+            await OnFolderExpand.InvokeAsync(Item);
+        }
+        else
+        {
+            await OnItemClick.InvokeAsync(Item);
+        }
+    }
+    
+    private string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes}B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024}KB";
+        return $"{bytes / (1024 * 1024)}MB";
+    }
+}

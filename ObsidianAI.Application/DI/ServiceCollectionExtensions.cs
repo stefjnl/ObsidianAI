@@ -31,6 +31,7 @@ namespace ObsidianAI.Application.DI
             services.AddScoped<StreamChatUseCase>();
             services.AddScoped<ModifyVaultUseCase>();
             services.AddScoped<SearchVaultUseCase>();
+            services.AddScoped<ListVaultContentsUseCase>();
             services.AddScoped<UpdateMessageArtifactsUseCase>();
             return services;
         }
