@@ -69,11 +69,11 @@ public sealed class ListVaultContentsUseCase
 
             var items = ParseVaultItems(toolResult.Content);
             _logger.LogInformation("Retrieved {Count} vault items from {Path}", items.Count, currentPath);
-            
+
             // Debug: Log first few items
             foreach (var item in items.Take(5))
             {
-                _logger.LogInformation("Parsed item - Name: '{Name}', Path: '{Path}', Type: {Type}", 
+                _logger.LogInformation("Parsed item - Name: '{Name}', Path: '{Path}', Type: {Type}",
                     item.Name, item.Path, item.Type);
             }
 
@@ -101,9 +101,9 @@ public sealed class ListVaultContentsUseCase
 
         var text = textBlock.Text.Trim();
         var items = new List<VaultItemDto>();
-        
+
         // Debug: Log raw response
-        _logger.LogInformation("MCP raw response (first 500 chars): {Text}", 
+        _logger.LogInformation("MCP raw response (first 500 chars): {Text}",
             text.Length > 500 ? text.Substring(0, 500) : text);
 
         // Check if response is JSON array format
