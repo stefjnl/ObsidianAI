@@ -468,19 +468,6 @@ public class ChatService : IChatService
     }
     
     /// <summary>
-    /// Gets the conversation history.
-    /// </summary>
-    /// <param name="sessionId">The session identifier.</param>
-    /// <returns>A list of chat messages.</returns>
-    public Task<List<ChatMessage>> GetConversationHistoryAsync(string sessionId)
-    {
-        _logger.LogInformation("Getting conversation history for session: {SessionId}", sessionId);
-        
-        // For now, return empty history as this would be implemented in a real API
-        return Task.FromResult(new List<ChatMessage>());
-    }
-    
-    /// <summary>
     /// Gets the current LLM provider name from the backend.
     /// </summary>
     public async Task<string> GetLlmProviderAsync()

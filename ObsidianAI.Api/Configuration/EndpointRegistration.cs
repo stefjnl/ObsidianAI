@@ -370,17 +370,21 @@ public static class EndpointRegistration
             ChatRequest request,
             StartChatUseCase useCase,
             ILlmClientFactory llmClientFactory,
+            IConversationRepository conversationRepository,
             IOptions<AppSettings> appSettings,
             CancellationToken cancellationToken) =>
         {
             var instructions = AgentInstructions.ObsidianAssistant;
 
-            var history = request.History?.Select(h => new ConversationMessage(
-                h.Role.Equals("user", StringComparison.OrdinalIgnoreCase) ? ParticipantRole.User : ParticipantRole.Assistant,
-                h.Content)).ToList();
+            string? threadId = null;
+            if (request.ConversationId.HasValue)
+            {
+                var conversation = await conversationRepository.GetByIdAsync(request.ConversationId.Value, includeMessages: false, cancellationToken).ConfigureAwait(false);
+                threadId = conversation?.ThreadId;
+            }
 
-            var input = new ChatInput(request.Message, history);
-            var context = BuildPersistenceContext(request, null, appSettings.Value, llmClientFactory.GetModelName());
+            var input = new ChatInput(request.Message);
+            var context = BuildPersistenceContext(request, null, appSettings.Value, llmClientFactory.GetModelName(), threadId);
             var result = await useCase.ExecuteAsync(input, instructions, context, cancellationToken).ConfigureAwait(false);
 
             return Results.Ok(new
@@ -398,6 +402,7 @@ public static class EndpointRegistration
             HttpContext context,
             StreamChatUseCase useCase,
             ILlmClientFactory llmClientFactory,
+            IConversationRepository conversationRepository,
             IOptions<AppSettings> appSettings,
             ILoggerFactory loggerFactory) =>
         {
@@ -406,12 +411,15 @@ public static class EndpointRegistration
 
             var instructions = AgentInstructions.ObsidianAssistant;
 
-            var history = request.History?.Select(h => new ConversationMessage(
-                h.Role.Equals("user", StringComparison.OrdinalIgnoreCase) ? ParticipantRole.User : ParticipantRole.Assistant,
-                h.Content)).ToList();
+            string? threadId = null;
+            if (request.ConversationId.HasValue)
+            {
+                var conversation = await conversationRepository.GetByIdAsync(request.ConversationId.Value, includeMessages: false, context.RequestAborted).ConfigureAwait(false);
+                threadId = conversation?.ThreadId;
+            }
 
-            var input = new ChatInput(request.Message, history);
-            var persistenceContext = BuildPersistenceContext(request, null, appSettings.Value, llmClientFactory.GetModelName());
+            var input = new ChatInput(request.Message);
+            var persistenceContext = BuildPersistenceContext(request, null, appSettings.Value, llmClientFactory.GetModelName(), threadId);
             var stream = useCase.ExecuteAsync(input, instructions, persistenceContext, context.RequestAborted);
 
             await StreamingEventWriter.WriteAsync(context, stream, logger, context.RequestAborted).ConfigureAwait(false);
@@ -433,10 +441,10 @@ public static class EndpointRegistration
         });
     }
 
-    private static ConversationPersistenceContext BuildPersistenceContext(ChatRequest request, string? userId, AppSettings appSettings, string modelName)
+    private static ConversationPersistenceContext BuildPersistenceContext(ChatRequest request, string? userId, AppSettings appSettings, string modelName, string? threadId)
     {
         var provider = ParseProvider(appSettings.LLM.Provider);
-        return new ConversationPersistenceContext(request.ConversationId, userId, provider, modelName, request.Message);
+        return new ConversationPersistenceContext(request.ConversationId, userId, provider, modelName, request.Message, threadId);
     }
 
     private static ConversationProvider ParseProvider(string provider)

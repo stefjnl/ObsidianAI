@@ -24,7 +24,8 @@
             OnSettingsClick="OpenSettings"
             OnHistoryClick="ShowHistory" />
 
-<PrivacyWarning IsVisible="@isOpenRouter" />
+<PrivacyWarning IsVisible="@(isOpenRouter && !isPrivacyWarningDismissed)" 
+                OnDismiss="DismissPrivacyWarning" />
 
 @if (isSidebarOpen)
 {
@@ -61,6 +62,7 @@
     private ChatMessage? currentAiMessage;
     private string llmProvider = string.Empty;
     private bool isOpenRouter = false;
+    private bool isPrivacyWarningDismissed = false;
     private int tokenBatchCount = 0;
     private const int TokenBatchSize = 3;
     private Guid? currentConversationId;
@@ -432,7 +434,7 @@
             if (hubConnection != null && hubConnection.State == HubConnectionState.Connected)
             {
                 // Send message via SignalR for streaming
-                await hubConnection.SendAsync("StreamMessage", messageToSend, currentConversationId?.ToString(), conversationHistory);
+                await hubConnection.SendAsync("StreamMessage", messageToSend, currentConversationId?.ToString());
             }
             else
             {
@@ -1260,6 +1262,12 @@
                 Logger.LogError(ex, "Failed to refresh conversations when opening history");
             }
         }
+    }
+
+    private void DismissPrivacyWarning()
+    {
+        isPrivacyWarningDismissed = true;
+        StateHasChanged();
     }
 
     private void PromoteUserMessage(StreamingMetadata metadata)

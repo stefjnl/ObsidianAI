@@ -11,4 +11,5 @@ public sealed record ConversationPersistenceContext(
     string? UserId,
     ConversationProvider Provider,
     string ModelName,
-    string? TitleSource);
+    string? TitleSource,
+    string? ThreadId);

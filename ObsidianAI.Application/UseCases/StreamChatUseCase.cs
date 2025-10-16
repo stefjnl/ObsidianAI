@@ -20,6 +20,7 @@ namespace ObsidianAI.Application.UseCases;
 public class StreamChatUseCase
 {
     private readonly IAIAgentFactory _agentFactory;
+    private readonly IAgentThreadProvider _threadProvider;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
     private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
     private readonly IVaultPathResolver _vaultPathResolver;
@@ -29,6 +30,7 @@ public class StreamChatUseCase
 
     public StreamChatUseCase(
         IAIAgentFactory agentFactory,
+        IAgentThreadProvider threadProvider,
         Domain.Services.IFileOperationExtractor extractor,
         IConversationRepository conversationRepository,
         IMessageRepository messageRepository,
@@ -37,6 +39,7 @@ public class StreamChatUseCase
         Application.Services.IMcpClientProvider? mcpClientProvider = null)
     {
         _agentFactory = agentFactory;
+        _threadProvider = threadProvider ?? throw new ArgumentNullException(nameof(threadProvider));
         _extractor = extractor;
         _conversationRepository = conversationRepository;
         _messageRepository = messageRepository;
@@ -67,14 +70,6 @@ public class StreamChatUseCase
         }
 
         var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
-        var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
-
-        var initialMetadataPayload = JsonSerializer.Serialize(new
-        {
-            conversationId = conversation.Id,
-            userMessageId = userMessage.Id
-        });
-        yield return ChatStreamEvent.MetadataEvent(initialMetadataPayload);
 
         IEnumerable<object>? tools = null;
         if (_mcpClientProvider != null)
@@ -86,11 +81,20 @@ public class StreamChatUseCase
             }
         }
 
-        var agent = await _agentFactory.CreateAgentAsync(instructions, tools, ct).ConfigureAwait(false);
+        var agent = await _agentFactory.CreateAgentAsync(instructions, tools, _threadProvider, ct).ConfigureAwait(false);
+        var threadId = await EnsureThreadAsync(conversation, persistenceContext.ThreadId, agent, ct).ConfigureAwait(false);
+        var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
+
+        var initialMetadataPayload = JsonSerializer.Serialize(new
+        {
+            conversationId = conversation.Id,
+            userMessageId = userMessage.Id
+        });
+        yield return ChatStreamEvent.MetadataEvent(initialMetadataPayload);
 
         var responseBuilder = new StringBuilder();
 
-        await foreach (var evt in agent.StreamAsync(input.Message, ct).ConfigureAwait(false))
+        await foreach (var evt in agent.StreamAsync(input.Message, threadId, ct).ConfigureAwait(false))
         {
             if (evt.Kind == ChatStreamEventKind.Text && !string.IsNullOrEmpty(evt.Text))
             {
@@ -116,6 +120,39 @@ public class StreamChatUseCase
         });
 
         yield return ChatStreamEvent.MetadataEvent(metadataPayload);
+    }
+
+    private async Task<string> EnsureThreadAsync(Conversation conversation, string? persistedThreadId, IChatAgent agent, CancellationToken ct)
+    {
+        if (conversation == null)
+        {
+            throw new ArgumentNullException(nameof(conversation));
+        }
+
+        var candidateId = !string.IsNullOrEmpty(conversation.ThreadId)
+            ? conversation.ThreadId
+            : persistedThreadId;
+
+        if (!string.IsNullOrEmpty(candidateId))
+        {
+            var existing = await _threadProvider.GetThreadAsync(candidateId, ct).ConfigureAwait(false);
+            if (existing is not null)
+            {
+                if (!string.Equals(conversation.ThreadId, candidateId, StringComparison.Ordinal))
+                {
+                    conversation.ThreadId = candidateId;
+                    await _conversationRepository.UpdateAsync(conversation, ct).ConfigureAwait(false);
+                }
+
+                return candidateId;
+            }
+        }
+
+        var thread = await agent.CreateThreadAsync(ct).ConfigureAwait(false);
+        var threadId = await _threadProvider.RegisterThreadAsync(thread, ct).ConfigureAwait(false);
+        conversation.ThreadId = threadId;
+        await _conversationRepository.UpdateAsync(conversation, ct).ConfigureAwait(false);
+        return threadId;
     }
 
     private async Task<Domain.Models.FileOperation?> ResolveFileOperationAsync(Domain.Models.FileOperation? fileOperation, CancellationToken ct)

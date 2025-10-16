@@ -21,7 +21,7 @@ public class ChatHub : Hub
         _httpClientFactory = httpClientFactory;
     }
 
-    public async Task StreamMessage(string message, string? conversationId, List<ChatMessage> history)
+    public async Task StreamMessage(string message, string? conversationId)
     {
         _logger.LogInformation("Processing streaming message: {Message}", message);
 
@@ -32,8 +32,7 @@ public class ChatHub : Hub
             var requestBody = new
             {
                 message,
-                conversationId,
-                history = history?.Select(h => new { role = h.Sender == MessageSender.User ? "user" : "assistant", content = h.Content }).ToList()
+                conversationId
             };
 
             using var request = new HttpRequestMessage(HttpMethod.Post, "/chat/stream")
