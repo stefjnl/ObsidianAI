@@ -9,12 +9,20 @@
 @using System.Text.Json
 @using Microsoft.Extensions.Logging
 @using Microsoft.AspNetCore.WebUtilities
+@using System.IO
+@using System.Linq
 @inject IChatService ChatService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
 @inject ILogger<Chat> Logger
 
-<ChatHeader OnVaultClick="OpenVault" OnSettingsClick="OpenSettings" OnHistoryClick="ShowHistory" />
+<ChatHeader Conversation="currentConversationMetadata"
+            IsExportEnabled="@currentConversationId.HasValue"
+            OnTitleChanged="HandleConversationTitleChangedAsync"
+            OnExport="HandleExportConversationAsync"
+            OnVaultClick="OpenVault"
+            OnSettingsClick="OpenSettings"
+            OnHistoryClick="ShowHistory" />
 
 <PrivacyWarning IsVisible="@isOpenRouter" />
 
@@ -23,11 +31,12 @@
     <ConversationSidebar
         Conversations="conversationSummaries"
         SelectedConversationId="currentConversationId"
-    IsLoading="isLoadingConversations"
+        IsLoading="isLoadingConversations"
         OnConversationSelected="HandleConversationSelectedAsync"
         OnClose="CloseSidebar"
         OnNewConversation="HandleNewConversationAsync"
-        OnDeleteConversation="HandleDeleteConversationAsync" />
+        OnDeleteConversation="HandleDeleteConversationAsync"
+        OnArchiveConversation="HandleArchiveConversationAsync" />
 }
 
 <ChatArea Messages="@conversationHistory"
@@ -55,10 +64,10 @@
     private int tokenBatchCount = 0;
     private const int TokenBatchSize = 3;
     private Guid? currentConversationId;
+    private ConversationMetadata? currentConversationMetadata;
     private List<ConversationSummary> conversationSummaries = new();
     private bool isSidebarOpen;
     private bool isLoadingConversations;
-    private bool isLoadingConversation;
     private string? pendingUserMessageClientId;
     private string? pendingAssistantMessageClientId;
     private static readonly Regex FileOpPattern1 = new(
@@ -273,21 +282,15 @@
 
         try
         {
-            isLoadingConversation = true;
             var conversationId = await ChatService.CreateConversationAsync();
-            currentConversationId = conversationId;
-            await RefreshConversationListAsync();
-            UpdateConversationRoute(conversationId);
+            pendingAssistantMessageClientId = null;
+            pendingUserMessageClientId = null;
+            await LoadConversationAsync(conversationId);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to initialize conversation");
             throw;
-        }
-        finally
-        {
-            isLoadingConversation = false;
-            StateHasChanged();
         }
     }
 
@@ -298,6 +301,22 @@
             isLoadingConversations = true;
             var summaries = await ChatService.ListConversationsAsync();
             conversationSummaries = summaries?.ToList() ?? new List<ConversationSummary>();
+
+            if (currentConversationId.HasValue && currentConversationMetadata != null)
+            {
+                var summary = conversationSummaries.FirstOrDefault(c => c.Id == currentConversationId.Value);
+                if (summary != null)
+                {
+                    currentConversationMetadata = currentConversationMetadata with
+                    {
+                        Title = summary.Title,
+                        UpdatedAt = summary.UpdatedAt,
+                        MessageCount = summary.MessageCount,
+                        Provider = summary.Provider,
+                        ModelName = summary.ModelName
+                    };
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -330,10 +349,18 @@
     {
         try
         {
-            isLoadingConversation = true;
             var detail = await ChatService.LoadConversationAsync(conversationId);
             currentConversationId = detail.Id;
             conversationHistory = detail.Messages.ToList();
+            currentConversationMetadata = new ConversationMetadata(
+                detail.Id,
+                detail.Title,
+                detail.CreatedAt,
+                detail.UpdatedAt,
+                detail.IsArchived,
+                detail.Provider,
+                detail.ModelName,
+                detail.Messages.Count);
             await RefreshConversationListAsync();
             UpdateConversationRoute(detail.Id);
             await ScrollToBottom();
@@ -344,7 +371,6 @@
         }
         finally
         {
-            isLoadingConversation = false;
             StateHasChanged();
         }
     }
@@ -456,24 +482,15 @@
     {
         try
         {
-            isLoadingConversation = true;
             var conversationId = await ChatService.CreateConversationAsync();
-            currentConversationId = conversationId;
-            conversationHistory.Clear();
             pendingAssistantMessageClientId = null;
             pendingUserMessageClientId = null;
-            await RefreshConversationListAsync();
-            UpdateConversationRoute(conversationId);
             isSidebarOpen = false;
+            await LoadConversationAsync(conversationId);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to create new conversation");
-        }
-        finally
-        {
-            isLoadingConversation = false;
-            StateHasChanged();
         }
     }
 
@@ -486,6 +503,7 @@
             {
                 currentConversationId = null;
                 conversationHistory.Clear();
+                currentConversationMetadata = null;
                 ClearConversationRoute();
             }
             await RefreshConversationListAsync();
@@ -497,6 +515,85 @@
         finally
         {
             StateHasChanged();
+        }
+    }
+
+    private async Task HandleArchiveConversationAsync(Guid conversationId)
+    {
+        try
+        {
+            var metadata = await ChatService.ArchiveConversationAsync(conversationId);
+            await RefreshConversationListAsync();
+
+            if (currentConversationId == conversationId)
+            {
+                currentConversationId = null;
+                currentConversationMetadata = null;
+                conversationHistory.Clear();
+                ClearConversationRoute();
+            }
+            else if (metadata != null && currentConversationMetadata?.Id == conversationId)
+            {
+                currentConversationMetadata = metadata;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to archive conversation {ConversationId}", conversationId);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleConversationTitleChangedAsync(string newTitle)
+    {
+        if (!currentConversationId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            var updated = await ChatService.UpdateConversationAsync(currentConversationId.Value, newTitle, null);
+            if (updated != null)
+            {
+                currentConversationMetadata = updated;
+                await RefreshConversationListAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to update conversation title for {ConversationId}", currentConversationId);
+        }
+        finally
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleExportConversationAsync()
+    {
+        if (!currentConversationId.HasValue)
+        {
+            return;
+        }
+
+        try
+        {
+            var exportContent = await ChatService.ExportConversationAsync(currentConversationId.Value);
+            if (string.IsNullOrWhiteSpace(exportContent))
+            {
+                return;
+            }
+
+            var fileName = CreateExportFileName(currentConversationMetadata?.Title, currentConversationId.Value);
+            await jsRuntime.InvokeVoidAsync("downloadFile", fileName, "application/json", exportContent);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to export conversation {ConversationId}", currentConversationId);
         }
     }
 
@@ -578,6 +675,15 @@
                 pendingAssistantMessageClientId = null;
             }
 
+            if (currentConversationMetadata != null)
+            {
+                currentConversationMetadata = currentConversationMetadata with
+                {
+                    UpdatedAt = DateTime.UtcNow,
+                    MessageCount = conversationHistory.Count
+                };
+            }
+
             await RefreshConversationListAsync();
             StateHasChanged();
         });
@@ -599,6 +705,19 @@
 
         var baseUri = uri.GetLeftPart(UriPartial.Path);
         NavigationManager.NavigateTo(baseUri, replace: true);
+    }
+
+    private static string CreateExportFileName(string? title, Guid conversationId)
+    {
+        var sanitizedTitle = SanitizeFileName(string.IsNullOrWhiteSpace(title) ? "conversation" : title);
+        return $"{sanitizedTitle}-{conversationId}.json";
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var cleaned = new string(name.Select(ch => invalidChars.Contains(ch) ? '-' : ch).ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) ? "conversation" : cleaned;
     }
 
     private async Task HandleActionConfirmed(string actionId)

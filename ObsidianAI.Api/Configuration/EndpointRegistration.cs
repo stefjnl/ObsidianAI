@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -143,11 +145,135 @@ public static class EndpointRegistration
 
         app.MapDelete("/conversations/{id:guid}", async (
             Guid id,
-            IConversationRepository repository,
+            DeleteConversationUseCase useCase,
             CancellationToken cancellationToken) =>
         {
-            await repository.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+            await useCase.ExecuteAsync(id, cancellationToken).ConfigureAwait(false);
             return Results.NoContent();
+        });
+
+        app.MapPut("/conversations/{id:guid}", async (
+            Guid id,
+            UpdateConversationRequest request,
+            UpdateConversationUseCase useCase,
+            CancellationToken cancellationToken) =>
+        {
+            var updated = await useCase.ExecuteAsync(id, request.Title, request.IsArchived, cancellationToken).ConfigureAwait(false);
+            if (updated is null)
+            {
+                return Results.NotFound();
+            }
+
+            var payload = new
+            {
+                id = updated.Id,
+                title = updated.Title,
+                createdAt = updated.CreatedAt,
+                updatedAt = updated.UpdatedAt,
+                isArchived = updated.IsArchived,
+                provider = updated.Provider,
+                modelName = updated.ModelName,
+                messageCount = updated.Messages.Count
+            };
+
+            return Results.Ok(payload);
+        });
+
+        app.MapGet("/conversations/{id:guid}/export", async (
+            Guid id,
+            LoadConversationUseCase useCase,
+            CancellationToken cancellationToken) =>
+        {
+            var conversation = await useCase.ExecuteAsync(id, cancellationToken).ConfigureAwait(false);
+            if (conversation is null)
+            {
+                return Results.NotFound();
+            }
+
+            var exportPayload = new
+            {
+                conversation = new
+                {
+                    conversation.Id,
+                    conversation.Title,
+                    conversation.CreatedAt,
+                    conversation.UpdatedAt,
+                    conversation.IsArchived,
+                    conversation.Provider,
+                    conversation.ModelName,
+                    messages = conversation.Messages.Select(message => new
+                    {
+                        message.Id,
+                        message.Role,
+                        message.Content,
+                        message.Timestamp,
+                        message.IsProcessing,
+                        message.TokenCount,
+                        actionCard = message.ActionCard == null ? null : new
+                        {
+                            message.ActionCard.Id,
+                            message.ActionCard.Title,
+                            message.ActionCard.Status,
+                            message.ActionCard.Operation,
+                            message.ActionCard.StatusMessage,
+                            message.ActionCard.CreatedAt,
+                            message.ActionCard.CompletedAt,
+                            plannedActions = message.PlannedActions.Select(action => new
+                            {
+                                action.Id,
+                                action.Type,
+                                action.Source,
+                                action.Destination,
+                                action.Description,
+                                action.Operation,
+                                action.Content,
+                                action.SortOrder
+                            })
+                        },
+                        fileOperation = message.FileOperation == null ? null : new
+                        {
+                            message.FileOperation.Id,
+                            message.FileOperation.Action,
+                            message.FileOperation.FilePath,
+                            message.FileOperation.Timestamp
+                        }
+                    })
+                }
+            };
+
+            var json = JsonSerializer.Serialize(exportPayload, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            var fileName = $"{SanitizeFileName(conversation.Title)}-{conversation.Id}.json";
+            return Results.File(Encoding.UTF8.GetBytes(json), "application/json", fileName);
+        });
+
+        app.MapPost("/conversations/{id:guid}/archive", async (
+            Guid id,
+            ArchiveConversationUseCase archiveUseCase,
+            CancellationToken cancellationToken) =>
+        {
+            var archived = await archiveUseCase.ExecuteAsync(id, cancellationToken).ConfigureAwait(false);
+            if (archived is null)
+            {
+                return Results.NotFound();
+            }
+
+            var payload = new
+            {
+                id = archived.Id,
+                title = archived.Title,
+                createdAt = archived.CreatedAt,
+                updatedAt = archived.UpdatedAt,
+                isArchived = archived.IsArchived,
+                provider = archived.Provider,
+                modelName = archived.ModelName,
+                messageCount = archived.Messages.Count
+            };
+
+            return Results.Ok(payload);
         });
 
         app.MapPost("/chat", async (
@@ -236,5 +362,17 @@ public static class EndpointRegistration
             "openrouter" => ConversationProvider.OpenRouter,
             _ => ConversationProvider.Unknown
         };
+    }
+
+    private static string SanitizeFileName(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return "conversation";
+        }
+
+        var invalidChars = System.IO.Path.GetInvalidFileNameChars();
+        var sanitized = new string(title.Select(c => invalidChars.Contains(c) ? '-' : c).ToArray());
+        return string.IsNullOrWhiteSpace(sanitized) ? "conversation" : sanitized;
     }
 }

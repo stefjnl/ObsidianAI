@@ -23,3 +23,5 @@ public record ModifyRequest(string Operation, string FilePath, string Content, s
 public record ModifyResponse(bool Success, string Message, string FilePath);
 
 public record CreateConversationRequest(string? Title, string? UserId);
+
+public record UpdateConversationRequest(string? Title, bool? IsArchived);

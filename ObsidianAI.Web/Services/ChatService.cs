@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ObsidianAI.Web.Models;
@@ -347,6 +348,118 @@ public class ChatService : IChatService
             throw;
         }
     }
+
+    /// <summary>
+    /// Updates conversation metadata such as the title or archive state.
+    /// </summary>
+    public async Task<ConversationMetadata?> UpdateConversationAsync(Guid conversationId, string? title, bool? isArchived)
+    {
+        try
+        {
+            _logger.LogInformation("Updating conversation {ConversationId}", conversationId);
+            var payload = new UpdateConversationApiRequest
+            {
+                Title = title,
+                IsArchived = isArchived
+            };
+
+            var response = await _httpClient.PutAsJsonAsync($"/conversations/{conversationId}", payload);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogWarning("Conversation {ConversationId} not found when updating", conversationId);
+                return null;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var updated = await response.Content.ReadFromJsonAsync<UpdateConversationApiResponse>();
+            if (updated == null)
+            {
+                throw new InvalidOperationException("API did not return updated conversation metadata.");
+            }
+
+            return new ConversationMetadata(
+                updated.Id,
+                updated.Title,
+                updated.CreatedAt,
+                updated.UpdatedAt,
+                updated.IsArchived,
+                updated.Provider,
+                updated.ModelName,
+                updated.MessageCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating conversation {ConversationId}", conversationId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Archives an existing conversation.
+    /// </summary>
+    public async Task<ConversationMetadata?> ArchiveConversationAsync(Guid conversationId)
+    {
+        try
+        {
+            _logger.LogInformation("Archiving conversation {ConversationId}", conversationId);
+            var response = await _httpClient.PostAsync($"/conversations/{conversationId}/archive", null);
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogWarning("Conversation {ConversationId} not found when archiving", conversationId);
+                return null;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var archived = await response.Content.ReadFromJsonAsync<ArchiveConversationApiResponse>();
+            if (archived == null)
+            {
+                throw new InvalidOperationException("API did not return archived conversation metadata.");
+            }
+
+            return new ConversationMetadata(
+                archived.Id,
+                archived.Title,
+                archived.CreatedAt,
+                archived.UpdatedAt,
+                archived.IsArchived,
+                archived.Provider,
+                archived.ModelName,
+                archived.MessageCount);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error archiving conversation {ConversationId}", conversationId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Downloads an exported conversation in JSON format.
+    /// </summary>
+    public async Task<string?> ExportConversationAsync(Guid conversationId)
+    {
+        try
+        {
+            _logger.LogInformation("Exporting conversation {ConversationId}", conversationId);
+            var response = await _httpClient.GetAsync($"/conversations/{conversationId}/export");
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogWarning("Conversation {ConversationId} not found when exporting", conversationId);
+                return null;
+            }
+
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsStringAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error exporting conversation {ConversationId}", conversationId);
+            throw;
+        }
+    }
     
     /// <summary>
     /// Gets the conversation history.
@@ -669,4 +782,34 @@ internal record ModifyApiResponse
     public bool Success { get; init; }
     public string Message { get; init; } = string.Empty;
     public string FilePath { get; init; } = string.Empty;
+}
+
+internal record UpdateConversationApiRequest
+{
+    public string? Title { get; init; }
+    public bool? IsArchived { get; init; }
+}
+
+internal record UpdateConversationApiResponse
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public DateTime CreatedAt { get; init; }
+    public DateTime UpdatedAt { get; init; }
+    public bool IsArchived { get; init; }
+    public string Provider { get; init; } = string.Empty;
+    public string ModelName { get; init; } = string.Empty;
+    public int MessageCount { get; init; }
+}
+
+internal record ArchiveConversationApiResponse
+{
+    public Guid Id { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public DateTime CreatedAt { get; init; }
+    public DateTime UpdatedAt { get; init; }
+    public bool IsArchived { get; init; }
+    public string Provider { get; init; } = string.Empty;
+    public string ModelName { get; init; } = string.Empty;
+    public int MessageCount { get; init; }
 }

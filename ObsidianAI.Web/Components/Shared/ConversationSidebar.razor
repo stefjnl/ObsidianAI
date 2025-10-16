@@ -50,6 +50,13 @@
                                 </div>
                             </button>
                             <button type="button"
+                                    class="sidebar-archive"
+                                    title="Archive conversation"
+                                    @onclick="() => ArchiveConversation(conversation.Id)"
+                                    @onclick:stopPropagation="true">
+                                Archive
+                            </button>
+                            <button type="button"
                                     class="sidebar-delete"
                                     title="Delete conversation"
                                     @onclick="() => DeleteConversation(conversation.Id)"
@@ -85,6 +92,9 @@
 
     [Parameter]
     public EventCallback<Guid> OnDeleteConversation { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnArchiveConversation { get; set; }
 
     private string searchTerm = string.Empty;
 
@@ -137,6 +147,13 @@
     {
         return OnDeleteConversation.HasDelegate
             ? OnDeleteConversation.InvokeAsync(conversationId)
+            : Task.CompletedTask;
+    }
+
+    private Task ArchiveConversation(Guid conversationId)
+    {
+        return OnArchiveConversation.HasDelegate
+            ? OnArchiveConversation.InvokeAsync(conversationId)
             : Task.CompletedTask;
     }
 

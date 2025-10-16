@@ -22,6 +22,9 @@ namespace ObsidianAI.Application.DI
             services.AddScoped<CreateConversationUseCase>();
             services.AddScoped<LoadConversationUseCase>();
             services.AddScoped<ListConversationsUseCase>();
+            services.AddScoped<ArchiveConversationUseCase>();
+            services.AddScoped<UpdateConversationUseCase>();
+            services.AddScoped<DeleteConversationUseCase>();
 
             services.AddScoped<StartChatUseCase>();
             services.AddScoped<StreamChatUseCase>();

@@ -1,15 +1,75 @@
+@using System
 @using ObsidianAI.Web.Models
 
 <div class="header">
-    <h1>🧠 Obsidian AI</h1>
-    <div class="header-actions">
-        <button class="btn-icon" type="button" aria-label="Open Vault" @onclick="OnVaultClick">📁 Vault</button>
-        <button class="btn-icon" type="button" aria-label="Open Settings" @onclick="OnSettingsClick">⚙️</button>
-        <button class="btn-icon" type="button" aria-label="Show History" @onclick="OnHistoryClick">History</button>
+    <div class="header-main">
+        <h1>🧠 Obsidian AI</h1>
+        <div class="header-actions">
+            <button class="btn-icon" type="button" aria-label="Open Vault" @onclick="OnVaultClick">📁 Vault</button>
+            <button class="btn-icon" type="button" aria-label="Open Settings" @onclick="OnSettingsClick">⚙️</button>
+            <button class="btn-icon" type="button" aria-label="Show History" @onclick="OnHistoryClick">History</button>
+        </div>
     </div>
+
+    @if (Conversation != null)
+    {
+        <div class="conversation-header">
+            <div class="conversation-title">
+                @if (isEditingTitle)
+                {
+                    <input class="conversation-title-input"
+                           @bind="editableTitle"
+                           @bind:event="oninput"
+                           @onkeydown="HandleTitleKeyDown"
+                           @onblur="SubmitTitleChange"
+                           autofocus
+                           aria-label="Conversation title" />
+                }
+                else
+                {
+                    <h2>@Conversation.Title</h2>
+                }
+
+                <button type="button"
+                        class="title-action"
+                        @onclick="ToggleTitleEdit"
+                        aria-label="Edit conversation title">
+                    @(isEditingTitle ? "Save" : "Rename")
+                </button>
+                <button type="button"
+                        class="title-action"
+                        disabled="@(!IsExportEnabled)"
+                        @onclick="OnExportConversation"
+                        aria-label="Export conversation">
+                    Export
+                </button>
+            </div>
+            <div class="conversation-meta">
+                <span>@FormatUpdatedAt(Conversation.UpdatedAt)</span>
+                <span>@FormatMessageCount(Conversation.MessageCount)</span>
+                <span>@Conversation.Provider (@Conversation.ModelName)</span>
+                @if (Conversation.IsArchived)
+                {
+                    <span class="conversation-tag">Archived</span>
+                }
+            </div>
+        </div>
+    }
 </div>
 
 @code {
+    [Parameter]
+    public ConversationMetadata? Conversation { get; set; }
+
+    [Parameter]
+    public bool IsExportEnabled { get; set; } = true;
+
+    [Parameter]
+    public EventCallback<string> OnTitleChanged { get; set; }
+
+    [Parameter]
+    public EventCallback OnExport { get; set; }
+
     [Parameter]
     public EventCallback OnVaultClick { get; set; }
 
@@ -18,4 +78,101 @@
 
     [Parameter]
     public EventCallback OnHistoryClick { get; set; }
+
+    private bool isEditingTitle;
+    private string editableTitle = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        if (!isEditingTitle && Conversation != null)
+        {
+            editableTitle = Conversation.Title;
+        }
+    }
+
+    private void ToggleTitleEdit()
+    {
+        if (Conversation is null)
+        {
+            return;
+        }
+
+        if (!isEditingTitle)
+        {
+            editableTitle = Conversation.Title;
+            isEditingTitle = true;
+        }
+        else
+        {
+            _ = SubmitTitleChange();
+        }
+    }
+
+    private async Task SubmitTitleChange()
+    {
+        if (!isEditingTitle)
+        {
+            return;
+        }
+
+        isEditingTitle = false;
+
+        if (Conversation is null)
+        {
+            return;
+        }
+
+        var trimmed = editableTitle?.Trim();
+        if (!string.IsNullOrEmpty(trimmed) && trimmed != Conversation.Title)
+        {
+            await OnTitleChanged.InvokeAsync(trimmed);
+        }
+    }
+
+    private async Task HandleTitleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key.Equals("Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            await SubmitTitleChange();
+        }
+        else if (args.Key.Equals("Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            isEditingTitle = false;
+            editableTitle = Conversation?.Title ?? string.Empty;
+        }
+    }
+
+    private string FormatUpdatedAt(DateTime updatedAt)
+    {
+        var delta = DateTime.UtcNow - updatedAt.ToUniversalTime();
+        if (delta.TotalMinutes < 1)
+        {
+            return "Updated just now";
+        }
+
+        if (delta.TotalHours < 1)
+        {
+            var minutes = Math.Max(1, (int)Math.Floor(delta.TotalMinutes));
+            return $"Updated {minutes} min ago";
+        }
+
+        if (delta.TotalDays < 1)
+        {
+            var hours = Math.Max(1, (int)Math.Floor(delta.TotalHours));
+            return hours == 1 ? "Updated 1 hr ago" : $"Updated {hours} hrs ago";
+        }
+
+        var days = Math.Max(1, (int)Math.Floor(delta.TotalDays));
+        return days == 1 ? "Updated 1 day ago" : $"Updated {days} days ago";
+    }
+
+    private static string FormatMessageCount(int messageCount)
+    {
+        return messageCount == 1 ? "1 message" : $"{messageCount} messages";
+    }
+
+    private Task OnExportConversation()
+    {
+        return OnExport.HasDelegate ? OnExport.InvokeAsync() : Task.CompletedTask;
+    }
 }

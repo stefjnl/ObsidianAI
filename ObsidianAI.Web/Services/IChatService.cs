@@ -69,6 +69,21 @@ public interface IChatService
     /// Deletes a conversation from persistence.
     /// </summary>
     Task DeleteConversationAsync(Guid conversationId);
+
+    /// <summary>
+    /// Updates conversation metadata such as the title or archive state.
+    /// </summary>
+    Task<ConversationMetadata?> UpdateConversationAsync(Guid conversationId, string? title, bool? isArchived);
+
+    /// <summary>
+    /// Archives a conversation and returns the refreshed metadata.
+    /// </summary>
+    Task<ConversationMetadata?> ArchiveConversationAsync(Guid conversationId);
+
+    /// <summary>
+    /// Retrieves a serialized export payload for the conversation.
+    /// </summary>
+    Task<string?> ExportConversationAsync(Guid conversationId);
     
     /// <summary>
     /// Gets the conversation history.
