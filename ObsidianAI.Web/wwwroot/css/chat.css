@@ -1365,19 +1365,19 @@ body {
     .vault-browser-open {
         right: 0;
     }
-    
+
     .vault-browser-header {
         padding: 20px 20px;
     }
-    
+
     .vault-browser-header h2 {
         font-size: 18px;
     }
-    
+
     .vault-browser-content {
         padding: 12px;
     }
-    
+
     .vault-item {
         padding: 10px 12px;
     }

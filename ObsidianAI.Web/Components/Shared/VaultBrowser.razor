@@ -8,7 +8,7 @@
         <h2>📁 Vault Browser</h2>
         <button class="vault-close-btn" type="button" @onclick="OnClose" aria-label="Close vault browser">✕</button>
     </div>
-    
+
     <div class="vault-browser-content">
         @if (IsLoading)
         {
@@ -37,14 +37,11 @@
                     🏠 Root
                 </button>
             </div>
-            
+
             <div class="vault-tree">
                 @foreach (var item in Items)
                 {
-                    <VaultTreeNode Item="item" 
-                                   Level="0"
-                                   OnItemClick="HandleItemClick"
-                                   OnFolderExpand="HandleFolderExpand" />
+                    <VaultTreeNode Item="item" Level="0" OnItemClick="HandleItemClick" OnFolderExpand="HandleFolderExpand" />
                 }
             </div>
         }
@@ -54,18 +51,18 @@
 @code {
     [Parameter]
     public bool IsOpen { get; set; }
-    
+
     [Parameter]
     public EventCallback OnClose { get; set; }
-    
+
     [Parameter]
     public EventCallback<VaultItemData> OnFileSelected { get; set; }
-    
+
     private List<VaultItemData> Items { get; set; } = new();
     private bool IsLoading { get; set; }
     private bool HasError { get; set; }
     private string CurrentPath { get; set; } = "/";
-    
+
     protected override async Task OnParametersSetAsync()
     {
         if (IsOpen && Items.Count == 0 && !IsLoading)
@@ -73,13 +70,13 @@
             await LoadVaultContents();
         }
     }
-    
+
     private async Task LoadVaultContents(string? path = null)
     {
         IsLoading = true;
         HasError = false;
         StateHasChanged();
-        
+
         try
         {
             var contents = await ChatService.BrowseVaultAsync(path);
@@ -99,13 +96,13 @@
             StateHasChanged();
         }
     }
-    
+
     private List<VaultItemData> ProcessVaultItems(List<VaultItemData> items)
     {
         // Items are already sorted from the API, just return them
         return items;
     }
-    
+
     private async Task HandleFolderExpand(VaultItemData folder)
     {
         if (!folder.IsExpanded)
@@ -113,7 +110,7 @@
             // Expand and load children
             folder.IsExpanded = true;
             StateHasChanged();
-            
+
             try
             {
                 var contents = await ChatService.BrowseVaultAsync(folder.Path);
@@ -125,7 +122,7 @@
                 Logger.LogError(ex, "Failed to load folder contents: {Path}", folder.Path);
                 folder.Children = new List<VaultItemData>();
             }
-            
+
             StateHasChanged();
         }
         else
@@ -135,7 +132,7 @@
             StateHasChanged();
         }
     }
-    
+
     private async Task HandleItemClick(VaultItemData item)
     {
         if (item.Type == VaultItemType.File)

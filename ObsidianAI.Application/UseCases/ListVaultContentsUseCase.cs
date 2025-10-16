@@ -69,6 +69,13 @@ public sealed class ListVaultContentsUseCase
 
             var items = ParseVaultItems(toolResult.Content);
             _logger.LogInformation("Retrieved {Count} vault items from {Path}", items.Count, currentPath);
+            
+            // Debug: Log first few items
+            foreach (var item in items.Take(5))
+            {
+                _logger.LogInformation("Parsed item - Name: '{Name}', Path: '{Path}', Type: {Type}", 
+                    item.Name, item.Path, item.Type);
+            }
 
             return new VaultContentsResponse(items, currentPath);
         }
@@ -94,8 +101,79 @@ public sealed class ListVaultContentsUseCase
 
         var text = textBlock.Text.Trim();
         var items = new List<VaultItemDto>();
+        
+        // Debug: Log raw response
+        _logger.LogInformation("MCP raw response (first 500 chars): {Text}", 
+            text.Length > 500 ? text.Substring(0, 500) : text);
 
-        // Parse line by line
+        // Check if response is JSON array format
+        if (text.StartsWith("[") && text.EndsWith("]"))
+        {
+            try
+            {
+                // Parse as JSON array
+                var paths = System.Text.Json.JsonSerializer.Deserialize<List<string>>(text);
+                if (paths != null)
+                {
+                    foreach (var path in paths)
+                    {
+                        if (string.IsNullOrWhiteSpace(path))
+                        {
+                            continue;
+                        }
+
+                        // Determine if it's a folder (ends with /) or file
+                        var isFolder = path.EndsWith("/", StringComparison.Ordinal);
+                        var cleanPath = isFolder ? path.TrimEnd('/') : path;
+                        var name = GetFileName(cleanPath);
+
+                        if (isFolder)
+                        {
+                            items.Add(new VaultItemDto(
+                                Name: name,
+                                Path: cleanPath,
+                                Type: VaultItemType.Folder,
+                                Extension: null,
+                                Size: null,
+                                LastModified: null));
+                        }
+                        else
+                        {
+                            var extension = System.IO.Path.GetExtension(path);
+                            items.Add(new VaultItemDto(
+                                Name: name,
+                                Path: cleanPath,
+                                Type: VaultItemType.File,
+                                Extension: extension,
+                                Size: null,
+                                LastModified: null));
+                        }
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to parse MCP response as JSON, falling back to line-by-line parsing");
+                // Fall back to line-by-line parsing
+                return ParseAsLines(text);
+            }
+        }
+        else
+        {
+            // Parse line by line for non-JSON responses
+            return ParseAsLines(text);
+        }
+
+        // Sort: folders first, then files, both alphabetically
+        return items
+            .OrderBy(i => i.Type == VaultItemType.File ? 1 : 0)
+            .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private List<VaultItemDto> ParseAsLines(string text)
+    {
+        var items = new List<VaultItemDto>();
         var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var line in lines)
@@ -129,16 +207,12 @@ public sealed class ListVaultContentsUseCase
                     Path: path,
                     Type: VaultItemType.File,
                     Extension: extension,
-                    Size: null, // MCP doesn't provide size in list response
-                    LastModified: null)); // MCP doesn't provide timestamp in list response
+                    Size: null,
+                    LastModified: null));
             }
         }
 
-        // Sort: folders first, then files, both alphabetically
-        return items
-            .OrderBy(i => i.Type == VaultItemType.File ? 1 : 0)
-            .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        return items;
     }
 
     private static string GetFileName(string path)
