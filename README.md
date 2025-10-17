@@ -14,6 +14,8 @@ ObsidianAI is a .NET Aspire application designed to enhance your Obsidian vault 
 *   **File Operation Tracking**: Complete audit trail of all file modifications made through the AI assistant.
 *   **Clean Architecture**: Enterprise-grade architecture with clear separation of concerns across Domain, Application, Infrastructure, API, and Web layers.
 *   **.NET Aspire Orchestration**: Leverages .NET Aspire for simplified development, deployment, and observability of distributed applications.
+*   **Vault Browser**: Hierarchical, lazy-loading vault browser in the web UI with emoji-safe path handling and reliable nested-folder expansion.
+*   **Path normalization & context preservation**: Preserves full vault path context for nested folders (including emoji names) to avoid "not found" errors when expanding folders.
 
 ## Microsoft Agent Framework
 
@@ -200,6 +202,20 @@ The solution follows **Clean Architecture** principles with clear separation of 
       }
     }
     ```
+
+## Vault Browser (Full functionality)
+
+The project now includes a full Vault Browser UI and API that lets you browse, expand, and navigate your Obsidian vault hierarchically from the web UI. This feature uses the MCP tools to list vault contents and maintain full path context so nested folders work reliably (including emoji-containing folder names).
+
+Key points:
+
+- UI: A Blazor component (`ObsidianAI.Web/Components/Shared/VaultBrowser.razor`) provides a tree view with expand/collapse behavior and lazy-loading of folder contents.
+- API: The endpoint `GET /vault/browse?path={path}` returns a JSON payload with `items` and `currentPath`. Example: `GET /vault/browse?path=%F0%9F%90%99%20Github/AIChatAssistant`.
+- Path handling: Paths returned by MCP are normalized and combined with the parent path to produce full paths so nested expansion works correctly.
+- Error handling: If the MCP tool returns an error (e.g. `404`), the UI shows a retry option and logs the error for debugging.
+
+Documentation and the fix notes are available at `docs/vault-browser-fix-2025-10-16.md` in this repo (includes root cause, changes and testing recommendations).
+
     
     Example for OpenRouter:
     ```json
