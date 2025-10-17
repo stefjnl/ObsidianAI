@@ -74,9 +74,11 @@ public sealed class TestFunctionCallMiddleware : IFunctionMiddleware
                 timestamp,
                 argumentsJson);
 
-            if (string.Equals(functionName, "obsidian_delete_file", StringComparison.Ordinal))
+            if (string.Equals(functionName, "obsidian_delete_file", StringComparison.Ordinal) ||
+                string.Equals(functionName, "obsidian_rename_file", StringComparison.Ordinal) ||
+                string.Equals(functionName, "obsidian_move_file", StringComparison.Ordinal))
             {
-                // Why block delete operations specifically?
+                // Why block destructive operations?
                 // Answer: They're irreversible and high-risk, perfect for testing termination logic.
                 _logger.LogWarning("⚠️ DESTRUCTIVE OPERATION DETECTED for {FunctionName}", functionName);
 

@@ -84,6 +84,192 @@ public sealed class TestFunctionCallMiddlewareTests
         Assert.Contains(harness.Logs, entry => entry.Level == LogLevel.Error && entry.Message.Contains("Test middleware failed", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task InvokeAsync_AllowsListOperations()
+    {
+        using var harness = MiddlewareHarness.Create();
+        var middleware = harness.Middleware;
+        var context = CreateContext("obsidian_list_directory", new Dictionary<string, object?> { { "path", "vault/" } });
+
+        var nextInvocations = 0;
+        ValueTask<object?> Next()
+        {
+            nextInvocations++;
+            return ValueTask.FromResult<object?>(new[] { "note1.md", "note2.md" });
+        }
+
+        var result = await middleware.InvokeAsync(context, Next, CancellationToken.None);
+
+        Assert.Equal(new[] { "note1.md", "note2.md" }, result);
+        Assert.False(context.Terminate);
+        Assert.Equal(1, nextInvocations);
+        Assert.Contains(harness.Logs, entry => entry.Level == LogLevel.Information && entry.Message.Contains("obsidian_list_directory", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AllowsSearchOperations()
+    {
+        using var harness = MiddlewareHarness.Create();
+        var middleware = harness.Middleware;
+        var context = CreateContext("obsidian_search", new Dictionary<string, object?> { { "query", "test query" } });
+
+        var nextInvocations = 0;
+        ValueTask<object?> Next()
+        {
+            nextInvocations++;
+            return ValueTask.FromResult<object?>(new[] { "result1", "result2" });
+        }
+
+        var result = await middleware.InvokeAsync(context, Next, CancellationToken.None);
+
+        Assert.Equal(new[] { "result1", "result2" }, result);
+        Assert.False(context.Terminate);
+        Assert.Equal(1, nextInvocations);
+        Assert.Contains(harness.Logs, entry => entry.Level == LogLevel.Information && entry.Message.Contains("obsidian_search", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_BlocksRenameOperations()
+    {
+        using var harness = MiddlewareHarness.Create();
+        var middleware = harness.Middleware;
+        var context = CreateContext("obsidian_rename_file", new Dictionary<string, object?>
+        {
+            { "old_path", "vault/old.md" },
+            { "new_path", "vault/new.md" }
+        });
+
+        var nextInvoked = false;
+        ValueTask<object?> Next()
+        {
+            nextInvoked = true;
+            return ValueTask.FromResult<object?>(null);
+        }
+
+        var result = await middleware.InvokeAsync(context, Next, CancellationToken.None);
+
+        Assert.Equal("DELETE BLOCKED BY TEST MIDDLEWARE", result);
+        Assert.True(context.Terminate);
+        Assert.False(nextInvoked);
+        Assert.Contains(harness.Logs, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("DESTRUCTIVE", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_BlocksMoveOperations()
+    {
+        using var harness = MiddlewareHarness.Create();
+        var middleware = harness.Middleware;
+        var context = CreateContext("obsidian_move_file", new Dictionary<string, object?>
+        {
+            { "source_path", "vault/source.md" },
+            { "target_path", "vault/target.md" }
+        });
+
+        var nextInvoked = false;
+        ValueTask<object?> Next()
+        {
+            nextInvoked = true;
+            return ValueTask.FromResult<object?>(null);
+        }
+
+        var result = await middleware.InvokeAsync(context, Next, CancellationToken.None);
+
+        Assert.Equal("DELETE BLOCKED BY TEST MIDDLEWARE", result);
+        Assert.True(context.Terminate);
+        Assert.False(nextInvoked);
+        Assert.Contains(harness.Logs, entry => entry.Level == LogLevel.Warning && entry.Message.Contains("DESTRUCTIVE", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_HandlesNullContext()
+    {
+        using var harness = MiddlewareHarness.Create();
+        var middleware = harness.Middleware;
+
+        var nextInvoked = false;
+        ValueTask<object?> Next()
+        {
+            nextInvoked = true;
+            return ValueTask.FromResult<object?>("SHOULD_NOT_EXECUTE");
+        }
+
+        var result = await middleware.InvokeAsync(null!, Next, CancellationToken.None);
+
+        Assert.Null(result);
+        Assert.False(nextInvoked);
+        Assert.Contains(harness.Logs, entry => entry.Level == LogLevel.Error && entry.Message.Contains("context was null", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_HandlesSerializationErrorInArguments()
+    {
+        using var harness = MiddlewareHarness.Create();
+        var middleware = harness.Middleware;
+
+        // Create a context with arguments that will fail JSON serialization
+        var func = AIFunctionFactory.Create(
+            (Func<ValueTask<object?>>)(() => ValueTask.FromResult<object?>(null)),
+            name: "obsidian_append_content");
+
+        var context = new FunctionContext(
+            function: func,
+            arguments: new Dictionary<string, object?> { { "unserializable", new CircularReference() } }
+        );
+
+        var nextInvocations = 0;
+        ValueTask<object?> Next()
+        {
+            nextInvocations++;
+            return ValueTask.FromResult<object?>("SUCCESS");
+        }
+
+        var result = await middleware.InvokeAsync(context, Next, CancellationToken.None);
+
+        Assert.Equal("SUCCESS", result);
+        Assert.Equal(1, nextInvocations);
+        Assert.Contains(harness.Logs, entry => entry.Level == LogLevel.Error && entry.Message.Contains("Failed to serialize arguments", StringComparison.Ordinal));
+        Assert.Contains(harness.Logs, entry => entry.Message.Contains("<unserializable>", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AllowsComplexArguments()
+    {
+        using var harness = MiddlewareHarness.Create();
+        var middleware = harness.Middleware;
+
+        var complexArgs = new Dictionary<string, object?>
+        {
+            { "path", "vault/note.md" },
+            { "content", "Some content" },
+            { "metadata", new { author = "test", tags = new[] { "tag1", "tag2" } } },
+            { "options", new Dictionary<string, object?> { { "overwrite", true }, { "encoding", "utf-8" } } }
+        };
+
+        var context = CreateContext("obsidian_append_content", complexArgs);
+
+        var nextInvocations = 0;
+        ValueTask<object?> Next()
+        {
+            nextInvocations++;
+            return ValueTask.FromResult<object?>("COMPLEX_SUCCESS");
+        }
+
+        var result = await middleware.InvokeAsync(context, Next, CancellationToken.None);
+
+        Assert.Equal("COMPLEX_SUCCESS", result);
+        Assert.False(context.Terminate);
+        Assert.Equal(1, nextInvocations);
+        Assert.Contains(harness.Logs, entry => entry.Level == LogLevel.Information && entry.Message.Contains("obsidian_append_content", StringComparison.Ordinal));
+        Assert.Contains(harness.Logs, entry => entry.Message.Contains("Some content", StringComparison.Ordinal));
+        Assert.Contains(harness.Logs, entry => entry.Message.Contains("author", StringComparison.Ordinal));
+    }
+
+    // Helper class for testing serialization failures
+    private class CircularReference
+    {
+        public CircularReference Self => this;
+    }
+
     private static FunctionContext CreateContext(string functionName, object? arguments = null)
     {
         var func = AIFunctionFactory.Create(
