@@ -103,3 +103,8 @@ Thumbs.db
 Thumbs.db:encryptable
 [Uu]sage
 .env
+
+# SQLite
+*.db-shm
+*.db-wal
+*.db
