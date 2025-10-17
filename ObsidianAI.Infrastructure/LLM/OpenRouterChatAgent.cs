@@ -6,6 +6,7 @@ using OpenAI;
 using System.ClientModel;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -19,7 +20,7 @@ namespace ObsidianAI.Infrastructure.LLM
         private readonly IChatClient _chatClient;
         private readonly string _instructions;
         private readonly ChatClientAgent _agent;
-    private readonly IAgentThreadProvider? _threadProvider;
+        private readonly IAgentThreadProvider? _threadProvider;
 
         /// <summary>
         /// Private constructor - use CreateAsync factory method instead.
@@ -42,7 +43,7 @@ namespace ObsidianAI.Infrastructure.LLM
             _chatClient = openAIClient.GetChatClient(model).AsIChatClient();
             _instructions = instructions ?? string.Empty;
 
-            // Create agent with tools (if provided)
+            // Create agent with tools (tools are already wrapped with middleware by factory)
             var aiTools = tools?.Cast<AITool>().ToArray() ?? Array.Empty<AITool>();
             _agent = new ChatClientAgent(
                 _chatClient,
@@ -122,5 +123,6 @@ namespace ObsidianAI.Infrastructure.LLM
             ct.ThrowIfCancellationRequested();
             return Task.FromResult(_agent.GetNewThread());
         }
+
     }
 }

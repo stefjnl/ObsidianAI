@@ -10,6 +10,7 @@ using ObsidianAI.Infrastructure.Data;
 using ObsidianAI.Infrastructure.Data.Repositories;
 using ObsidianAI.Infrastructure.Agents;
 using ObsidianAI.Infrastructure.LLM;
+using ObsidianAI.Infrastructure.Middleware;
 using ObsidianAI.Infrastructure.Vault;
 
 namespace ObsidianAI.Infrastructure.DI;
@@ -35,7 +36,18 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConversationRepository, ConversationRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
 
-        services.AddSingleton<IAIAgentFactory, ConfiguredAIAgentFactory>();
+        // Register function middleware
+        services.AddSingleton<IFunctionMiddleware, TestFunctionCallMiddleware>();
+
+        // Register agent factory with middleware injection
+        services.AddSingleton<IAIAgentFactory>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<AppSettings>>();
+            var middlewares = sp.GetServices<IFunctionMiddleware>();
+            var logger = sp.GetRequiredService<ILogger<ConfiguredAIAgentFactory>>();
+            return new ConfiguredAIAgentFactory(options, middlewares, logger);
+        });
+
         services.AddSingleton<IAgentThreadProvider, InMemoryAgentThreadProvider>();
         services.AddSingleton<IVaultToolExecutor>(sp =>
         {

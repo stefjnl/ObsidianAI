@@ -78,6 +78,20 @@ public class StreamChatUseCase
             if (mcpClient != null)
             {
                 tools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+
+                _logger.LogWarning(
+                    "📦 MCP returned {ToolCount} tools",
+                    tools?.Count() ?? 0
+                );
+
+                if (tools?.Any() == true)
+                {
+                    var firstTool = tools.First();
+                    _logger.LogWarning(
+                        "📦 First MCP tool type: {ToolType}",
+                        firstTool.GetType().FullName
+                    );
+                }
             }
         }
 
