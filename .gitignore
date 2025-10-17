@@ -108,3 +108,5 @@ Thumbs.db:encryptable
 *.db-shm
 *.db-wal
 *.db
+ObsidianAI.Api/obsidianai.db
+ObsidianAI.Api/obsidianai.db

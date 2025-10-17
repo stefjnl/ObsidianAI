@@ -38,6 +38,12 @@ namespace ObsidianAI.Api.Streaming
                         await context.Response.WriteAsync($"event: tool_call\ndata: {update.ToolName}\n\n", ct);
                         await context.Response.Body.FlushAsync(ct);
                     }
+                    else if (update.Kind == ChatStreamEventKind.ActionCardMetadata && !string.IsNullOrEmpty(update.ActionCardData))
+                    {
+                        logger.LogInformation("Sending action_card event from reflection middleware");
+                        await context.Response.WriteAsync($"event: action_card\ndata: {update.ActionCardData}\n\n", ct);
+                        await context.Response.Body.FlushAsync(ct);
+                    }
                     else if (update.Kind == ChatStreamEventKind.Metadata && !string.IsNullOrEmpty(update.Metadata))
                     {
                         logger.LogInformation("Sending metadata event: {Payload}", update.Metadata);

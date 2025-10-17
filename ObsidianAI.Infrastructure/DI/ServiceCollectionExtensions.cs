@@ -5,11 +5,14 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ObsidianAI.Application.Services;
 using ObsidianAI.Domain.Ports;
+using ObsidianAI.Domain.Services;
 using ObsidianAI.Infrastructure.Configuration;
 using ObsidianAI.Infrastructure.Data;
 using ObsidianAI.Infrastructure.Data.Repositories;
 using ObsidianAI.Infrastructure.Agents;
 using ObsidianAI.Infrastructure.LLM;
+using ObsidianAI.Infrastructure.Middleware;
+using ObsidianAI.Infrastructure.Services;
 using ObsidianAI.Infrastructure.Vault;
 
 namespace ObsidianAI.Infrastructure.DI;
@@ -35,7 +38,25 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConversationRepository, ConversationRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
 
-        services.AddSingleton<IAIAgentFactory, ConfiguredAIAgentFactory>();
+        // Register agent state service
+        services.AddSingleton<IAgentStateService, AgentStateService>();
+
+        // Register reflection services
+        services.AddSingleton<ReflectionPromptBuilder>();
+        services.AddSingleton<IReflectionService, OpenRouterReflectionService>();
+
+        // Register reflection middleware
+        services.AddSingleton<IFunctionMiddleware, ReflectionFunctionMiddleware>();
+
+        // Register agent factory with middleware injection
+        services.AddSingleton<IAIAgentFactory>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<AppSettings>>();
+            var middlewares = sp.GetServices<IFunctionMiddleware>();
+            var logger = sp.GetRequiredService<ILogger<ConfiguredAIAgentFactory>>();
+            return new ConfiguredAIAgentFactory(options, middlewares, logger);
+        });
+
         services.AddSingleton<IAgentThreadProvider, InMemoryAgentThreadProvider>();
         services.AddSingleton<IVaultToolExecutor>(sp =>
         {

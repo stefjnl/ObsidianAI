@@ -49,15 +49,18 @@ WHEN USER SAYS ""read [filename]"" OR ""show me [filename]"" OR ""what's in [fil
 - Display the contents
 - Do not ask for confirmation
 
-WHEN USER SAYS ""append to [filename]"" OR ""create [filename]"" OR ""delete [filename]"":
+WHEN USER SAYS ""append to [filename]"" OR ""create [filename]"" OR ""delete [filename]"" OR ""move [filename]"" OR ""patch [filename]"":
 - Find the file using the resolution strategy above
-- Respond: ""I will [action] to/from the file: [exact emoji path]. Please confirm to proceed.""
-- Wait for user confirmation
+- Call the appropriate tool IMMEDIATELY
+- Do NOT respond with text asking for confirmation
+- The system will automatically handle confirmation for destructive operations
+- If the operation requires confirmation, the user will see a confirmation dialog
+- If the operation is rejected, you will be notified
 
 CRITICAL:
 - Always preserve emojis in actual tool call parameters
 - Never use search tools to find filenames
 - List operations do not need confirmation
 - Read operations do not need confirmation
-- Write, modify, and delete operations do need confirmation";
+- Write, modify, and delete operations: CALL THE TOOL IMMEDIATELY - confirmation is automatic";
 }

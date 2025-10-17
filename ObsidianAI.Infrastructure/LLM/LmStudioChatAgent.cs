@@ -6,6 +6,7 @@ using OpenAI;
 using System.ClientModel;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -19,7 +20,7 @@ namespace ObsidianAI.Infrastructure.LLM
         private readonly IChatClient _chatClient;
         private readonly string _instructions;
         private readonly ChatClientAgent _agent;
-    private readonly IAgentThreadProvider? _threadProvider;
+        private readonly IAgentThreadProvider? _threadProvider;
 
         /// <summary>
         /// Private constructor - use CreateAsync factory method instead.
@@ -42,7 +43,7 @@ namespace ObsidianAI.Infrastructure.LLM
             _chatClient = (IChatClient)openAIClient.GetChatClient(model);
             _instructions = instructions ?? string.Empty;
 
-            // Create agent with tools (if provided)
+            // Create agent with tools (tools are already wrapped with middleware by factory)
             var aiTools = tools?.Cast<AITool>().ToArray() ?? Array.Empty<AITool>();
             _agent = new ChatClientAgent(
                 _chatClient,
@@ -110,6 +111,15 @@ namespace ObsidianAI.Infrastructure.LLM
                         {
                             yield return ChatStreamEvent.ToolCall(fcc.Name);
                         }
+                        else if (content is FunctionResultContent frc)
+                        {
+                            // Check if tool result contains PENDING_CONFIRMATION from reflection middleware
+                            var actionCardJson = ExtractActionCardFromToolResult(frc.Result);
+                            if (actionCardJson != null)
+                            {
+                                yield return ChatStreamEvent.ActionCardEvent(actionCardJson);
+                            }
+                        }
                     }
                 }
             }
@@ -121,5 +131,27 @@ namespace ObsidianAI.Infrastructure.LLM
             ct.ThrowIfCancellationRequested();
             return Task.FromResult(_agent.GetNewThread());
         }
+
+        private static string? ExtractActionCardFromToolResult(object? result)
+        {
+            if (result == null) return null;
+
+            // Check if result is an anonymous object with Status = "PENDING_CONFIRMATION"
+            var resultType = result.GetType();
+            var statusProp = resultType.GetProperty("Status");
+            var actionCardJsonProp = resultType.GetProperty("ActionCardJson");
+
+            if (statusProp != null && actionCardJsonProp != null)
+            {
+                var status = statusProp.GetValue(result)?.ToString();
+                if (status == "PENDING_CONFIRMATION")
+                {
+                    return actionCardJsonProp.GetValue(result)?.ToString();
+                }
+            }
+
+            return null;
+        }
+
     }
 }
