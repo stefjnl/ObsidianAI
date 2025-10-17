@@ -6,6 +6,40 @@
         📋 PLANNED ACTIONS
     </div>
     
+    @* Display reflection reasoning and warnings for server-side ActionCards *@
+    @if (!string.IsNullOrEmpty(Card.ReflectionReasoning) || (Card.ReflectionWarnings?.Any() ?? false))
+    {
+        <div class="reflection-metadata">
+            @if (!string.IsNullOrEmpty(Card.ReflectionReasoning))
+            {
+                <div class="reflection-reasoning">
+                    <button class="btn-expand" @onclick="ToggleReasoningExpanded">
+                        @(ReasoningExpanded ? "▼" : "▶") Why is confirmation needed?
+                    </button>
+                    @if (ReasoningExpanded)
+                    {
+                        <div class="reasoning-content">
+                            💡 @Card.ReflectionReasoning
+                        </div>
+                    }
+                </div>
+            }
+            
+            @if (Card.ReflectionWarnings?.Any() ?? false)
+            {
+                <div class="reflection-warnings">
+                    <strong>⚠️ Important Warnings:</strong>
+                    <ul>
+                        @foreach (var warning in Card.ReflectionWarnings)
+                        {
+                            <li>@warning</li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    }
+    
     <ul class="action-list">
         @foreach (var action in DisplayedActions)
         {
@@ -78,6 +112,7 @@
     public EventCallback<string> OnEdit { get; set; }
     
     private bool ShowAllActions { get; set; } = false;
+    private bool ReasoningExpanded { get; set; } = false;
     
     private List<PlannedAction> DisplayedActions =>
         ShowAllActions || !Card.HasMoreActions
@@ -87,6 +122,11 @@
     private void ToggleShowAll()
     {
         ShowAllActions = !ShowAllActions;
+    }
+    
+    private void ToggleReasoningExpanded()
+    {
+        ReasoningExpanded = !ReasoningExpanded;
     }
     
     private async Task ConfirmAction()

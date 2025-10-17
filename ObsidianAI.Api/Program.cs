@@ -13,6 +13,7 @@ builder.Services.AddObsidianApiServices(builder.Configuration);
 var app = builder.Build();
 app.MapDefaultEndpoints();
 app.MapObsidianEndpoints();
+app.MapActionCardEndpoints();
 app.MapHealthChecks("/healthz");
 
 using (var scope = app.Services.CreateScope())

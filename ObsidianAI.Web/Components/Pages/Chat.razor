@@ -15,6 +15,7 @@
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
 @inject ILogger<Chat> Logger
+@inject HttpClient HttpClient
 
 <ChatHeader Conversation="currentConversationMetadata"
             IsExportEnabled="@currentConversationId.HasValue"
@@ -159,6 +160,11 @@
         hubConnection.On<string>("Metadata", metadataJson =>
         {
             _ = HandleMetadataAsync(metadataJson);
+        });
+
+        hubConnection.On<string>("ActionCard", actionCardJson =>
+        {
+            _ = HandleServerActionCardAsync(actionCardJson);
         });
 
         hubConnection.On<object>("StatusUpdate", (update) =>
@@ -803,6 +809,14 @@
         var message = conversationHistory.FirstOrDefault(m => m.ActionCard?.Id == actionId);
         if (message == null || message.ActionCard == null) return;
 
+        // Check if this is a server-side ActionCard (from reflection middleware)
+        if (!string.IsNullOrEmpty(message.ActionCard.ReflectionKey))
+        {
+            await HandleServerSideActionCardConfirmation(message, message.ActionCard.ReflectionKey);
+            return;
+        }
+
+        // Original client-side ActionCard handling
         // Update the action card status to Processing
         message = message with
         {
@@ -901,29 +915,168 @@
         StateHasChanged();
     }
 
+    private async Task HandleServerSideActionCardConfirmation(ChatMessage message, string reflectionKey)
+    {
+        // Update status to Processing
+        var index = conversationHistory.IndexOf(message);
+        if (index < 0) return;
+
+        message = message with
+        {
+            ActionCard = message.ActionCard! with { Status = ActionCardStatus.Processing }
+        };
+        conversationHistory[index] = message;
+        StateHasChanged();
+
+        try
+        {
+            Logger?.LogInformation("Confirming server-side ActionCard with reflection key: {ReflectionKey}", reflectionKey);
+
+            // Call the new ActionCard confirmation API endpoint
+            var apiUrl = $"http://localhost:5095/actioncards/{reflectionKey}/confirm";
+            var response = await HttpClient.PostAsync(apiUrl, null);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+                Logger?.LogInformation("ActionCard confirmation successful: {Result}", result);
+
+                message = message with
+                {
+                    ActionCard = message.ActionCard! with
+                    {
+                        Status = ActionCardStatus.Completed,
+                        StatusMessage = "Operation completed successfully"
+                    }
+                };
+            }
+            else
+            {
+                var errorMessage = await response.Content.ReadAsStringAsync();
+                Logger?.LogError("ActionCard confirmation failed: {Error}", errorMessage);
+
+                message = message with
+                {
+                    ActionCard = message.ActionCard! with
+                    {
+                        Status = ActionCardStatus.Failed,
+                        StatusMessage = $"Operation failed: {errorMessage}"
+                    }
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogError(ex, "Failed to confirm server-side ActionCard");
+
+            message = message with
+            {
+                ActionCard = message.ActionCard! with
+                {
+                    Status = ActionCardStatus.Failed,
+                    StatusMessage = $"Error: {ex.Message}"
+                }
+            };
+        }
+
+        conversationHistory[index] = message;
+        StateHasChanged();
+    }
+
+    private async Task HandleServerSideActionCardCancellation(ChatMessage message, string reflectionKey)
+    {
+        var index = conversationHistory.IndexOf(message);
+        if (index < 0) return;
+
+        try
+        {
+            Logger?.LogInformation("Cancelling server-side ActionCard with reflection key: {ReflectionKey}", reflectionKey);
+
+            // Call the ActionCard cancellation API endpoint
+            var apiUrl = $"http://localhost:5095/actioncards/{reflectionKey}/cancel";
+            var response = await HttpClient.PostAsync(apiUrl, null);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+                Logger?.LogInformation("ActionCard cancellation successful: {Result}", result);
+
+                message = message with
+                {
+                    ActionCard = message.ActionCard! with
+                    {
+                        Status = ActionCardStatus.Cancelled,
+                        StatusMessage = "Operation cancelled by user"
+                    }
+                };
+            }
+            else
+            {
+                var errorMessage = await response.Content.ReadAsStringAsync();
+                Logger?.LogWarning("ActionCard cancellation failed: {Error}", errorMessage);
+
+                // Still mark as cancelled even if API call failed
+                message = message with
+                {
+                    ActionCard = message.ActionCard! with
+                    {
+                        Status = ActionCardStatus.Cancelled,
+                        StatusMessage = "Operation cancelled (cleanup may have failed)"
+                    }
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogError(ex, "Failed to cancel server-side ActionCard");
+
+            // Still mark as cancelled even if exception occurred
+            message = message with
+            {
+                ActionCard = message.ActionCard! with
+                {
+                    Status = ActionCardStatus.Cancelled,
+                    StatusMessage = "Operation cancelled (error during cleanup)"
+                }
+            };
+        }
+
+        conversationHistory[index] = message;
+        StateHasChanged();
+        await PersistMessageArtifactsAsync(message);
+    }
+
     private async Task HandleActionCancelled(string actionId)
     {
         // Find the message with this action card
         var message = conversationHistory.FirstOrDefault(m => m.ActionCard?.Id == actionId);
         if (message != null && message.ActionCard != null)
         {
-            // Update the action card status
-            message = message with
+            // Check if this is a server-side ActionCard (has ReflectionKey)
+            if (!string.IsNullOrEmpty(message.ActionCard.ReflectionKey))
             {
-                ActionCard = message.ActionCard with
+                await HandleServerSideActionCardCancellation(message, message.ActionCard.ReflectionKey);
+            }
+            else
+            {
+                // Client-side ActionCard - just update status
+                message = message with
                 {
-                    Status = ActionCardStatus.Cancelled,
-                    StatusMessage = "Action cancelled by user"
-                }
-            };
+                    ActionCard = message.ActionCard with
+                    {
+                        Status = ActionCardStatus.Cancelled,
+                        StatusMessage = "Action cancelled by user"
+                    }
+                };
 
-            // Update in the list
-            var index = conversationHistory.IndexOf(conversationHistory.First(m => m.ActionCard?.Id == actionId));
-            conversationHistory[index] = message;
+                // Update in the list
+                var index = conversationHistory.IndexOf(conversationHistory.First(m => m.ActionCard?.Id == actionId));
+                conversationHistory[index] = message;
 
-            StateHasChanged();
+                StateHasChanged();
 
-            await PersistMessageArtifactsAsync(message);
+                await PersistMessageArtifactsAsync(message);
+            }
         }
     }
 
@@ -1394,4 +1547,100 @@
     private sealed record StreamingMetadata(Guid ConversationId, Guid? UserMessageId, Guid? AssistantMessageId, StreamingFileOperation? FileOperation);
 
     private sealed record StreamingFileOperation(string Action, string FilePath);
+
+    private Task HandleServerActionCardAsync(string actionCardJson)
+    {
+        return InvokeAsync(() =>
+        {
+            try
+            {
+                Logger?.LogInformation("Received ActionCard from reflection middleware: {Json}", actionCardJson);
+
+                // Parse the ActionCard JSON
+                var jsonDoc = System.Text.Json.JsonDocument.Parse(actionCardJson);
+                var root = jsonDoc.RootElement;
+
+                // Extract ActionCard properties
+                var id = root.GetProperty("id").GetString() ?? Guid.NewGuid().ToString();
+                var title = root.GetProperty("title").GetString() ?? "Operation Confirmation";
+                var operation = root.GetProperty("operation").GetString() ?? "modify";
+                
+                // Parse planned actions
+                var plannedActions = new List<PlannedAction>();
+                if (root.TryGetProperty("plannedActions", out var actionsArray))
+                {
+                    foreach (var actionEl in actionsArray.EnumerateArray())
+                    {
+                        var action = new PlannedAction
+                        {
+                            Type = Enum.TryParse<ActionType>(actionEl.GetProperty("type").GetString(), true, out var at) ? at : ActionType.Other,
+                            Source = actionEl.GetProperty("source").GetString() ?? string.Empty,
+                            Destination = actionEl.GetProperty("destination").GetString() ?? string.Empty,
+                            Description = actionEl.GetProperty("description").GetString() ?? string.Empty,
+                            Operation = actionEl.GetProperty("operation").GetString() ?? string.Empty,
+                            Content = actionEl.TryGetProperty("content", out var contentEl) ? contentEl.GetString() : null
+                        };
+                        plannedActions.Add(action);
+                    }
+                }
+
+                // Extract reflection key and metadata (server-side ActionCards only)
+                string? reflectionKey = null;
+                string? reflectionReasoning = null;
+                List<string>? reflectionWarnings = null;
+                
+                if (root.TryGetProperty("reflectionMetadata", out var metadata))
+                {
+                    if (metadata.TryGetProperty("reflectionKey", out var keyEl))
+                    {
+                        reflectionKey = keyEl.GetString();
+                        Logger?.LogInformation("ActionCard has reflection key: {ReflectionKey}", reflectionKey);
+                    }
+                    
+                    if (metadata.TryGetProperty("reasoning", out var reasoningEl))
+                    {
+                        reflectionReasoning = reasoningEl.GetString();
+                    }
+                    
+                    if (metadata.TryGetProperty("warnings", out var warningsEl))
+                    {
+                        reflectionWarnings = new List<string>();
+                        foreach (var warning in warningsEl.EnumerateArray())
+                        {
+                            reflectionWarnings.Add(warning.GetString() ?? string.Empty);
+                        }
+                    }
+                }
+
+                // Create ActionCard data
+                var actionCard = new ActionCardData
+                {
+                    Id = id,
+                    Title = title,
+                    OperationType = operation.ToLowerInvariant() switch
+                    {
+                        "delete" => ActionOperationType.Delete,
+                        "move" => ActionOperationType.Move,
+                        "patch" => ActionOperationType.Other,
+                        _ => ActionOperationType.Other
+                    },
+                    Actions = plannedActions,
+                    Status = ActionCardStatus.Pending,
+                    StatusMessage = string.Empty,
+                    ReflectionKey = reflectionKey,
+                    ReflectionReasoning = reflectionReasoning,
+                    ReflectionWarnings = reflectionWarnings
+                };
+
+                // Attach to current AI message
+                AttachActionCard(actionCard);
+                
+                Logger?.LogInformation("Successfully created ActionCard with {Count} actions", plannedActions.Count);
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogError(ex, "Failed to parse ActionCard from reflection middleware");
+            }
+        });
+    }
 }

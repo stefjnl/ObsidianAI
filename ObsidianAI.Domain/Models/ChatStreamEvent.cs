@@ -18,7 +18,12 @@ namespace ObsidianAI.Domain.Models
         /// <summary>
         /// Provides metadata associated with the streamed conversation (e.g., identifiers).
         /// </summary>
-        Metadata
+        Metadata,
+
+        /// <summary>
+        /// Provides ActionCard data from reflection middleware that requires user confirmation.
+        /// </summary>
+        ActionCardMetadata
     }
 
     /// <summary>
@@ -28,7 +33,8 @@ namespace ObsidianAI.Domain.Models
     /// <param name="Text">Optional text content when <see cref="ChatStreamEventKind.Text"/>.</param>
     /// <param name="ToolName">Optional tool name when <see cref="ChatStreamEventKind.ToolCall"/>.</param>
     /// <param name="Metadata">Optional metadata payload when <see cref="ChatStreamEventKind.Metadata"/>.</param>
-    public sealed record ChatStreamEvent(ChatStreamEventKind Kind, string? Text = null, string? ToolName = null, string? Metadata = null)
+    /// <param name="ActionCardData">Optional ActionCard JSON when <see cref="ChatStreamEventKind.ActionCardMetadata"/>.</param>
+    public sealed record ChatStreamEvent(ChatStreamEventKind Kind, string? Text = null, string? ToolName = null, string? Metadata = null, string? ActionCardData = null)
     {
         /// <summary>
         /// Creates a text chunk event.
@@ -50,5 +56,12 @@ namespace ObsidianAI.Domain.Models
         /// <param name="metadata">The metadata payload.</param>
         /// <returns>A <see cref="ChatStreamEvent"/> with kind <see cref="ChatStreamEventKind.Metadata"/>.</returns>
         public static ChatStreamEvent MetadataEvent(string metadata) => new(ChatStreamEventKind.Metadata, Metadata: metadata);
+
+        /// <summary>
+        /// Creates an ActionCard metadata event with structured confirmation data from reflection middleware.
+        /// </summary>
+        /// <param name="actionCardJson">The ActionCard JSON payload.</param>
+        /// <returns>A <see cref="ChatStreamEvent"/> with kind <see cref="ChatStreamEventKind.ActionCardMetadata"/>.</returns>
+        public static ChatStreamEvent ActionCardEvent(string actionCardJson) => new(ChatStreamEventKind.ActionCardMetadata, ActionCardData: actionCardJson);
     }
 }

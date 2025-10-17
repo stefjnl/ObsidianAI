@@ -113,6 +113,12 @@ public class ChatHub : Hub
                         await Clients.Caller.SendAsync("StatusUpdate", new { type = "tool_call", tool = data });
                         currentEvent = null;
                     }
+                    else if (currentEvent == "action_card")
+                    {
+                        _logger.LogInformation("Received action_card event from reflection middleware");
+                        await Clients.Caller.SendAsync("ActionCard", data);
+                        currentEvent = null;
+                    }
                     else if (currentEvent == "metadata")
                     {
                         await Clients.Caller.SendAsync("Metadata", data);

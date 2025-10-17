@@ -44,6 +44,21 @@ namespace ObsidianAI.Web.Models
         /// Type of operation being performed
         /// </summary>
         public ActionOperationType OperationType { get; init; }
+        
+        /// <summary>
+        /// Reflection key for server-side ActionCards (null for client-side ActionCards)
+        /// </summary>
+        public string? ReflectionKey { get; init; }
+        
+        /// <summary>
+        /// Reasoning from reflection analysis (server-side ActionCards only)
+        /// </summary>
+        public string? ReflectionReasoning { get; init; }
+        
+        /// <summary>
+        /// Warnings from reflection analysis (server-side ActionCards only)
+        /// </summary>
+        public List<string>? ReflectionWarnings { get; init; }
     }
 
     /// <summary>

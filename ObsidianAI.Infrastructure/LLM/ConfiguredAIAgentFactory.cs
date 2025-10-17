@@ -60,6 +60,7 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
         CancellationToken cancellationToken = default)
     {
         // LOG: What did we receive?
+        Console.WriteLine($"[FACTORY] 📦 CreateAgentAsync received {tools?.Count() ?? 0} tools");
         _logger.LogWarning(
             "📦 CreateAgentAsync received {ToolCount} tools",
             tools?.Count() ?? 0
@@ -68,6 +69,7 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
         if (tools?.Any() == true)
         {
             var firstTool = tools.First();
+            Console.WriteLine($"[FACTORY] 📦 First tool type: {firstTool.GetType().FullName}");
             _logger.LogWarning(
                 "📦 First tool type: {ToolType}",
                 firstTool.GetType().FullName
@@ -76,10 +78,14 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
 
         // LOG: How many are AIFunction?
         var aiFunctions = tools?.OfType<AIFunction>().ToList() ?? [];
+        Console.WriteLine($"[FACTORY] 📦 Filtered to {aiFunctions.Count} AIFunction objects");
         _logger.LogWarning(
             "📦 Filtered to {AIFunctionCount} AIFunction objects",
             aiFunctions.Count
         );
+
+        Console.WriteLine($"[FACTORY] 🔄 About to wrap with {_middlewares.Count} middlewares");
+        Console.WriteLine($"[FACTORY] 🔄 Condition check: tools={tools is not null}, middlewares={_middlewares.Count > 0}");
 
         // Wrap tools with middleware if provided
         var wrappedTools = tools is not null && _middlewares.Count > 0
@@ -89,16 +95,19 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
             : tools;
 
         // LOG: What happened during wrapping?
+        var wrappedCount = (wrappedTools as IEnumerable<object>)?.Count() ?? 0;
+        Console.WriteLine($"[FACTORY] 🔄 Wrapping result: Input={tools?.Count() ?? 0}, Middlewares={_middlewares.Count}, Output={wrappedCount}");
         _logger.LogWarning(
             "🔄 Wrapping result: Input={InputCount}, Middlewares={MiddlewareCount}, Output={OutputCount}",
             tools?.Count() ?? 0,
             _middlewares.Count,
-            (wrappedTools as IEnumerable<object>)?.Count() ?? 0
+            wrappedCount
         );
 
         if (wrappedTools is IEnumerable<object> wrapped && wrapped.Any())
         {
             var firstWrapped = wrapped.First();
+            Console.WriteLine($"[FACTORY] 🔄 First wrapped tool type: {firstWrapped.GetType().FullName}");
             _logger.LogWarning(
                 "🔄 First wrapped tool type: {WrappedType}",
                 firstWrapped.GetType().FullName
