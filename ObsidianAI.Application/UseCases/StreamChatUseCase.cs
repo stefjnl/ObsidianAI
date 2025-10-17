@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -23,6 +24,7 @@ public class StreamChatUseCase
     private readonly IAgentThreadProvider _threadProvider;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
     private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
+    private readonly IMicrosoftLearnMcpClientProvider? _microsoftLearnMcpClientProvider;
     private readonly IVaultPathResolver _vaultPathResolver;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
@@ -36,7 +38,8 @@ public class StreamChatUseCase
         IMessageRepository messageRepository,
         IVaultPathResolver vaultPathResolver,
         ILogger<StreamChatUseCase>? logger = null,
-        Application.Services.IMcpClientProvider? mcpClientProvider = null)
+        Application.Services.IMcpClientProvider? mcpClientProvider = null,
+        IMicrosoftLearnMcpClientProvider? microsoftLearnMcpClientProvider = null)
     {
         _agentFactory = agentFactory;
         _threadProvider = threadProvider ?? throw new ArgumentNullException(nameof(threadProvider));
@@ -46,6 +49,7 @@ public class StreamChatUseCase
         _vaultPathResolver = vaultPathResolver ?? throw new ArgumentNullException(nameof(vaultPathResolver));
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamChatUseCase>.Instance;
         _mcpClientProvider = mcpClientProvider;
+        _microsoftLearnMcpClientProvider = microsoftLearnMcpClientProvider;
     }
 
     /// <summary>
@@ -71,27 +75,41 @@ public class StreamChatUseCase
 
         var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
 
-        IEnumerable<object>? tools = null;
-        if (_mcpClientProvider != null)
+        List<object>? tools = null;
+        var obsidianToolCount = 0;
+        var microsoftLearnToolCount = 0;
+
+        if (_mcpClientProvider != null || _microsoftLearnMcpClientProvider != null)
         {
-            var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
-            if (mcpClient != null)
+            tools = new List<object>();
+
+            if (_mcpClientProvider != null)
             {
-                tools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
-
-                _logger.LogWarning(
-                    "📦 MCP returned {ToolCount} tools",
-                    tools?.Count() ?? 0
-                );
-
-                if (tools?.Any() == true)
+                var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
+                if (mcpClient != null)
                 {
-                    var firstTool = tools.First();
-                    _logger.LogWarning(
-                        "📦 First MCP tool type: {ToolType}",
-                        firstTool.GetType().FullName
-                    );
+                    var obsidianTools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+                    obsidianToolCount = AppendTools(tools, obsidianTools);
                 }
+            }
+
+            if (_microsoftLearnMcpClientProvider != null)
+            {
+                var learnClient = await _microsoftLearnMcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
+                if (learnClient != null)
+                {
+                    var learnTools = await learnClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+                    microsoftLearnToolCount = AppendTools(tools, learnTools);
+                }
+            }
+
+            if (tools.Count == 0)
+            {
+                tools = null;
+            }
+            else
+            {
+                _logger.LogInformation("📦 Merged {ObsidianCount} Obsidian + {MicrosoftLearnCount} Microsoft Learn tools", obsidianToolCount, microsoftLearnToolCount);
             }
         }
 
@@ -306,5 +324,38 @@ public class StreamChatUseCase
         }
 
         return trimmed.Substring(0, MaxLength) + "…";
+    }
+
+    private static int AppendTools(List<object> target, IEnumerable<object> tools)
+    {
+        if (tools == null)
+        {
+            return 0;
+        }
+
+        var added = 0;
+        foreach (var tool in tools)
+        {
+            if (tool is null)
+            {
+                continue;
+            }
+
+            var name = TryGetToolName(tool);
+            if (name != null && target.Any(existing => string.Equals(TryGetToolName(existing), name, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            target.Add(tool);
+            added++;
+        }
+
+        return added;
+    }
+
+    private static string? TryGetToolName(object tool)
+    {
+        return tool.GetType().GetProperty("Name")?.GetValue(tool) as string;
     }
 }

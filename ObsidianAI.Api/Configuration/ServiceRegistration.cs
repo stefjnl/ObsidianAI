@@ -31,6 +31,7 @@ public static class ServiceRegistration
         services.AddSingleton<McpClientService>();
         services.AddHostedService<McpClientService>();
         services.AddSingleton<IMcpClientProvider>(sp => sp.GetRequiredService<McpClientService>());
+    services.AddSingleton<IMicrosoftLearnMcpClientProvider, MicrosoftLearnMcpClient>();
 
         services.AddObsidianAI(configuration);
         services.AddObsidianApplication();
@@ -47,7 +48,8 @@ public static class ServiceRegistration
 
         services.AddHealthChecks()
             .AddCheck<McpHealthCheck>("mcp")
-            .AddCheck<LlmHealthCheck>("llm");
+            .AddCheck<LlmHealthCheck>("llm")
+            .AddCheck<MicrosoftLearnHealthCheck>("microsoft-learn");
 
         return services;
     }

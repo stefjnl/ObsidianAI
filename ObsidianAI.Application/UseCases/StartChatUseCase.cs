@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,7 @@ public class StartChatUseCase
     private readonly IAgentThreadProvider _threadProvider;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
     private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
+    private readonly IMicrosoftLearnMcpClientProvider? _microsoftLearnMcpClientProvider;
     private readonly IVaultPathResolver _vaultPathResolver;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
@@ -33,6 +35,7 @@ public class StartChatUseCase
         IConversationRepository conversationRepository,
         IMessageRepository messageRepository,
         Application.Services.IMcpClientProvider? mcpClientProvider = null,
+        IMicrosoftLearnMcpClientProvider? microsoftLearnMcpClientProvider = null,
         ILogger<StartChatUseCase>? logger = null)
     {
         _agentFactory = agentFactory;
@@ -42,6 +45,7 @@ public class StartChatUseCase
         _conversationRepository = conversationRepository;
         _messageRepository = messageRepository;
         _mcpClientProvider = mcpClientProvider;
+        _microsoftLearnMcpClientProvider = microsoftLearnMcpClientProvider;
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StartChatUseCase>.Instance;
     }
 
@@ -64,13 +68,41 @@ public class StartChatUseCase
 
         var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
 
-        IEnumerable<object>? tools = null;
-        if (_mcpClientProvider != null)
+        List<object>? tools = null;
+        var obsidianToolCount = 0;
+        var microsoftLearnToolCount = 0;
+
+        if (_mcpClientProvider != null || _microsoftLearnMcpClientProvider != null)
         {
-            var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
-            if (mcpClient != null)
+            tools = new List<object>();
+
+            if (_mcpClientProvider != null)
             {
-                tools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+                var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
+                if (mcpClient != null)
+                {
+                    var obsidianTools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+                    obsidianToolCount = AppendTools(tools, obsidianTools);
+                }
+            }
+
+            if (_microsoftLearnMcpClientProvider != null)
+            {
+                var learnClient = await _microsoftLearnMcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
+                if (learnClient != null)
+                {
+                    var learnTools = await learnClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+                    microsoftLearnToolCount = AppendTools(tools, learnTools);
+                }
+            }
+
+            if (tools.Count == 0)
+            {
+                tools = null;
+            }
+            else
+            {
+                _logger.LogInformation("📦 Merged {ObsidianCount} Obsidian + {MicrosoftLearnCount} Microsoft Learn tools", obsidianToolCount, microsoftLearnToolCount);
             }
         }
 
@@ -258,5 +290,38 @@ public class StartChatUseCase
         }
 
         return $"Chat - {DateTime.UtcNow:MMM d, yyyy HH:mm}";
+    }
+
+    private static int AppendTools(List<object> target, IEnumerable<object> tools)
+    {
+        if (tools == null)
+        {
+            return 0;
+        }
+
+        var added = 0;
+        foreach (var tool in tools)
+        {
+            if (tool is null)
+            {
+                continue;
+            }
+
+            var name = TryGetToolName(tool);
+            if (name != null && target.Any(existing => string.Equals(TryGetToolName(existing), name, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            target.Add(tool);
+            added++;
+        }
+
+        return added;
+    }
+
+    private static string? TryGetToolName(object tool)
+    {
+        return tool.GetType().GetProperty("Name")?.GetValue(tool) as string;
     }
 }
