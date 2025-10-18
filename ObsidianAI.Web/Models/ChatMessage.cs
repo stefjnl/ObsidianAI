@@ -55,6 +55,11 @@ namespace ObsidianAI.Web.Models
     /// Tools invoked while generating this message.
     /// </summary>
     public List<string> ToolsUsed { get; init; } = new();
+
+    /// <summary>
+    /// Reference URLs associated with this message (for example, Microsoft Learn docs).
+    /// </summary>
+    public List<string> Sources { get; init; } = new();
         
         /// <summary>
         /// Whether the message is currently being processed

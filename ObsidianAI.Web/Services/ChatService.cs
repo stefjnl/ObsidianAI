@@ -73,7 +73,8 @@ public class ChatService : IChatService
                 Timestamp = DateTime.UtcNow,
                 FileOperation = apiResponse?.FileOperationResult,
                 IsPending = false,
-                ToolsUsed = new List<string>()
+                ToolsUsed = new List<string>(),
+                Sources = new List<string>()
             };
 
             _logger.LogInformation("Received structured response from API");
@@ -93,7 +94,8 @@ public class ChatService : IChatService
                 Sender = MessageSender.AI,
                 Timestamp = DateTime.UtcNow,
                 IsPending = false,
-                ToolsUsed = new List<string>()
+                ToolsUsed = new List<string>(),
+                Sources = new List<string>()
             };
         }
     }
@@ -529,7 +531,8 @@ public class ChatService : IChatService
             IsProcessing = source.IsProcessing,
             ProcessingType = ProcessingType.None,
             IsPending = false,
-            ToolsUsed = source.ToolsUsed ?? new List<string>()
+            ToolsUsed = source.ToolsUsed ?? new List<string>(),
+            Sources = source.Sources?.Where(static s => !string.IsNullOrWhiteSpace(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>()
         };
     }
 
@@ -865,6 +868,7 @@ internal record ConversationMessageApiResponse
     public ActionCardApiResponse? ActionCard { get; init; }
     public FileOperationApiResponse? FileOperation { get; init; }
     public List<string>? ToolsUsed { get; init; }
+    public List<string>? Sources { get; init; }
 }
 
 internal record ActionCardApiResponse

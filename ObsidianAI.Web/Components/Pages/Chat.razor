@@ -95,6 +95,18 @@
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
         TimeSpan.FromMilliseconds(100));
 
+    private static readonly Regex MicrosoftLearnUrlPattern = new(
+        @"https?://[^\s]+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
+        TimeSpan.FromMilliseconds(100));
+
+    private static readonly string[] MicrosoftLearnHosts = new[]
+    {
+        "learn.microsoft.com",
+        "review.learn.microsoft.com",
+        "aka.ms"
+    };
+
     protected override async Task OnInitializedAsync()
     {
         await FetchLlmProvider();
@@ -229,8 +241,10 @@
                     var index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
                     if (index >= 0)
                     {
-                        currentAiMessage = currentAiMessage with { IsProcessing = false };
-                        conversationHistory[index] = currentAiMessage;
+                        var completedMessage = conversationHistory[index];
+                        completedMessage = AttachMicrosoftLearnSources(completedMessage, finalMessage, Logger);
+                        completedMessage = completedMessage with { IsProcessing = false };
+                        conversationHistory[index] = completedMessage;
                     }
                     
                     currentAiMessage = null;
@@ -438,7 +452,8 @@
             Sender = MessageSender.User,
             Timestamp = DateTime.UtcNow,
             IsPending = true,
-            ToolsUsed = new List<string>()
+            ToolsUsed = new List<string>(),
+            Sources = new List<string>()
         };
 
         conversationHistory.Add(userMessage);
@@ -459,7 +474,8 @@
             IsProcessing = true,
             ProcessingType = ProcessingType.Thinking,
             IsPending = true,
-            ToolsUsed = new List<string>()
+            ToolsUsed = new List<string>(),
+            Sources = new List<string>()
         };
 
         conversationHistory.Add(currentAiMessage);
@@ -1399,6 +1415,123 @@
         }
 
         return results.ToList();
+    }
+
+    private static ChatMessage AttachMicrosoftLearnSources(ChatMessage message, string response, ILogger? logger)
+    {
+        if (message.ToolsUsed == null || message.ToolsUsed.Count == 0)
+        {
+            return message;
+        }
+
+        if (!message.ToolsUsed.Any(IsMicrosoftLearnToolName))
+        {
+            return message;
+        }
+
+        var extracted = ExtractMicrosoftLearnSources(response, logger);
+        if (extracted.Count == 0)
+        {
+            return message;
+        }
+
+    var existingCount = message.Sources?.Count ?? 0;
+    var merged = MergeSources(message.Sources, extracted);
+    if (merged.Count == existingCount)
+        {
+            return message;
+        }
+
+        return message with { Sources = merged };
+    }
+
+    private static List<string> ExtractMicrosoftLearnSources(string response, ILogger? logger)
+    {
+        var results = new List<string>();
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            return results;
+        }
+
+        try
+        {
+            foreach (System.Text.RegularExpressions.Match match in MicrosoftLearnUrlPattern.Matches(response))
+            {
+                var normalized = NormalizeSourceUrl(match.Value);
+                if (string.IsNullOrEmpty(normalized))
+                {
+                    continue;
+                }
+
+                if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri))
+                {
+                    continue;
+                }
+
+                if (!IsMicrosoftLearnHost(uri.Host))
+                {
+                    continue;
+                }
+
+                var absolute = uri.AbsoluteUri;
+                if (!results.Any(existing => string.Equals(existing, absolute, StringComparison.OrdinalIgnoreCase)))
+                {
+                    results.Add(absolute);
+                }
+            }
+        }
+        catch (RegexMatchTimeoutException ex)
+        {
+            logger?.LogDebug(ex, "Timeout while extracting Microsoft Learn sources.");
+        }
+
+        return results;
+    }
+
+    private static List<string> MergeSources(List<string>? existingSources, IReadOnlyCollection<string> newSources)
+    {
+        var merged = existingSources is { Count: > 0 }
+            ? new List<string>(existingSources)
+            : new List<string>();
+
+        foreach (var source in newSources)
+        {
+            if (!merged.Any(existing => string.Equals(existing, source, StringComparison.OrdinalIgnoreCase)))
+            {
+                merged.Add(source);
+            }
+        }
+
+        return merged;
+    }
+
+    private static bool IsMicrosoftLearnHost(string? host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        return MicrosoftLearnHosts.Any(known =>
+            host.Equals(known, StringComparison.OrdinalIgnoreCase) ||
+            host.EndsWith($".{known}", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsMicrosoftLearnToolName(string? toolName) =>
+        !string.IsNullOrWhiteSpace(toolName) &&
+        toolName.StartsWith("microsoft_", StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeSourceUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = url.Trim();
+        trimmed = trimmed.TrimStart('(', '[', '{', '<', '\'', '"');
+        trimmed = trimmed.TrimEnd('.', ',', ';', '!', '?', ')', ']', '}', '>', '\'', '"');
+        return trimmed;
     }
 
     private async Task ScrollToBottom()
