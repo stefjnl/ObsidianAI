@@ -20,6 +20,8 @@ public class ObsidianAIDbContext : DbContext
 
     public DbSet<Message> Messages { get; set; } = null!;
 
+    public DbSet<Attachment> Attachments { get; set; } = null!;
+
     public DbSet<ActionCardRecord> ActionCards { get; set; } = null!;
 
     public DbSet<PlannedActionRecord> PlannedActions { get; set; } = null!;
@@ -31,6 +33,7 @@ public class ObsidianAIDbContext : DbContext
     {
         ConfigureConversation(modelBuilder.Entity<Conversation>());
         ConfigureMessage(modelBuilder.Entity<Message>());
+        ConfigureAttachment(modelBuilder.Entity<Attachment>());
         ConfigureActionCard(modelBuilder.Entity<ActionCardRecord>());
         ConfigurePlannedAction(modelBuilder.Entity<PlannedActionRecord>());
         ConfigureFileOperation(modelBuilder.Entity<FileOperationRecord>());
@@ -92,6 +95,29 @@ public class ObsidianAIDbContext : DbContext
 
         builder.HasIndex(m => m.ConversationId);
         builder.HasIndex(m => new { m.ConversationId, m.Timestamp });
+    }
+
+    private static void ConfigureAttachment(EntityTypeBuilder<Attachment> builder)
+    {
+        builder.ToTable("Attachments");
+
+        builder.HasKey(a => a.Id);
+        builder.Property(a => a.Id).ValueGeneratedNever();
+        builder.Property(a => a.Filename).HasMaxLength(256);
+        builder.Property(a => a.Content).HasColumnType("TEXT");
+        builder.Property(a => a.FileType).HasMaxLength(16);
+        builder.Property(a => a.CreatedAt).HasConversion(new UtcDateTimeConverter());
+        builder.Property(a => a.RowVersion)
+            .IsRowVersion()
+            .IsConcurrencyToken();
+
+        builder.HasOne(a => a.Conversation)
+            .WithMany(c => c.Attachments)
+            .HasForeignKey(a => a.ConversationId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasIndex(a => a.ConversationId);
+        builder.HasIndex(a => new { a.ConversationId, a.CreatedAt });
     }
 
     private static void ConfigureActionCard(EntityTypeBuilder<ActionCardRecord> builder)

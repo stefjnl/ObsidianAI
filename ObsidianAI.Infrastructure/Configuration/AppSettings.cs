@@ -9,4 +9,9 @@ public class AppSettings
     /// LLM configuration section.
     /// </summary>
     public required LlmSettings LLM { get; set; }
+
+    /// <summary>
+    /// Allowed file types for attachments.
+    /// </summary>
+    public string[] AllowedAttachmentTypes { get; set; } = [".txt", ".md", ".json"];
 }

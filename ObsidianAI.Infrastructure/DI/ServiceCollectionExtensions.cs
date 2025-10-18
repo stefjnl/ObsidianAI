@@ -37,6 +37,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IConversationRepository, ConversationRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
+        services.AddScoped<IAttachmentRepository, AttachmentRepository>();
+        services.AddScoped<IAttachmentValidator, AttachmentValidator>();
 
         // Register agent state service
         services.AddSingleton<IAgentStateService, AgentStateService>();

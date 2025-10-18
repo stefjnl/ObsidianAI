@@ -35,6 +35,7 @@ namespace ObsidianAI.Application.DI
             services.AddScoped<SearchVaultUseCase>();
             services.AddScoped<ListVaultContentsUseCase>();
             services.AddScoped<UpdateMessageArtifactsUseCase>();
+            services.AddScoped<AddAttachmentToConversationUseCase>();
             return services;
         }
     }

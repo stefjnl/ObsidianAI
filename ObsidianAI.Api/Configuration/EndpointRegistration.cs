@@ -403,6 +403,7 @@ public static class EndpointRegistration
             StreamChatUseCase useCase,
             ILlmClientFactory llmClientFactory,
             IConversationRepository conversationRepository,
+            IAttachmentRepository attachmentRepository,
             IOptions<AppSettings> appSettings,
             ILoggerFactory loggerFactory) =>
         {
@@ -418,7 +419,19 @@ public static class EndpointRegistration
                 threadId = conversation?.ThreadId;
             }
 
-            var input = new ChatInput(request.Message);
+            // Fetch attachments if conversation exists
+            var attachments = new List<AttachmentContent>();
+            if (request.ConversationId.HasValue)
+            {
+                var attachmentEntities = await attachmentRepository.GetByConversationIdAsync(request.ConversationId.Value, context.RequestAborted).ConfigureAwait(false);
+                attachments = attachmentEntities.Select(a => new AttachmentContent(a.Filename, a.Content, a.FileType)).ToList();
+                if (attachments.Count > 0)
+                {
+                    logger.LogInformation("Including {Count} attachments in chat context", attachments.Count);
+                }
+            }
+
+            var input = new ChatInput(request.Message, attachments);
             var persistenceContext = BuildPersistenceContext(request, null, appSettings.Value, llmClientFactory.GetModelName(), threadId);
             var stream = useCase.ExecuteAsync(input, instructions, persistenceContext, context.RequestAborted);
 
@@ -460,6 +473,55 @@ public static class EndpointRegistration
                 }),
                 currentPath = result.CurrentPath
             };
+
+            return Results.Ok(payload);
+        });
+
+        app.MapPost("/conversations/{id:guid}/attachments", async (
+            Guid id,
+            HttpRequest request,
+            AddAttachmentToConversationUseCase useCase,
+            IAttachmentValidator attachmentValidator,
+            CancellationToken cancellationToken) =>
+        {
+            var form = await request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+            var file = form.Files.GetFile("file");
+
+            var validationResult = attachmentValidator.ValidateFileUpload(request, file);
+            if (!validationResult.IsValid)
+            {
+                return Results.BadRequest(validationResult.ErrorMessage);
+            }
+
+            var extension = System.IO.Path.GetExtension(file.FileName).ToLowerInvariant();
+
+            using var reader = new System.IO.StreamReader(file.OpenReadStream());
+            var content = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+
+            var attachment = await useCase.ExecuteAsync(id, file.FileName, content, extension, cancellationToken).ConfigureAwait(false);
+
+            return Results.Created($"/conversations/{id}/attachments/{attachment.Id}", new
+            {
+                id = attachment.Id,
+                filename = attachment.Filename,
+                fileType = attachment.FileType,
+                createdAt = attachment.CreatedAt
+            });
+        }).DisableAntiforgery();
+
+        app.MapGet("/conversations/{id:guid}/attachments", async (
+            Guid id,
+            IAttachmentRepository repository,
+            CancellationToken cancellationToken) =>
+        {
+            var attachments = await repository.GetByConversationIdAsync(id, cancellationToken).ConfigureAwait(false);
+            var payload = attachments.Select(a => new
+            {
+                id = a.Id,
+                filename = a.Filename,
+                fileType = a.FileType,
+                createdAt = a.CreatedAt
+            });
 
             return Results.Ok(payload);
         });

@@ -2,6 +2,10 @@
 
 <div class="input-area">
     <div class="input-wrapper">
+        <button class="btn-attachment" type="button" aria-label="Add attachment" @onclick="HandleAttachmentClick"
+            disabled="@IsProcessing" title="Add attachment (txt, md, json)">
+            📎
+        </button>
         <input type="text" class="input-field" placeholder="Type a message..." aria-label="Message input"
             value="@currentMessage" @oninput="OnInputChange" @onkeypress="HandleKeyPress" disabled="@IsProcessing" />
         <button class="btn-send" type="button" aria-label="Send message" @onclick="HandleSendMessage"
@@ -44,6 +48,9 @@
     [Parameter]
     public EventCallback<QuickAction> OnQuickAction { get; set; }
 
+    [Parameter]
+    public EventCallback OnAttachmentClick { get; set; }
+
     protected override Task OnParametersSetAsync()
     {
         if (currentMessage != MessageText)
@@ -77,5 +84,10 @@
         currentMessage = action.Prefix;
         await MessageTextChanged.InvokeAsync(currentMessage);
         await OnQuickAction.InvokeAsync(action);
+    }
+
+    private async Task HandleAttachmentClick()
+    {
+        await OnAttachmentClick.InvokeAsync();
     }
 }

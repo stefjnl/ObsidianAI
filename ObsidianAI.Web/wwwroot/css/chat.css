@@ -563,6 +563,35 @@ body {
     transform: none;
 }
 
+.btn-attachment {
+    background: transparent;
+    color: #6b7280;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+}
+
+.btn-attachment:hover:not(:disabled) {
+    background: #f3f4f6;
+    color: #374151;
+    transform: translateY(-1px);
+}
+
+.btn-attachment:disabled {
+    color: #d1d5db;
+    cursor: not-allowed;
+    transform: none;
+}
+
 .quick-actions {
     width: 100%;
     max-width: 900px;

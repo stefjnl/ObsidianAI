@@ -54,12 +54,15 @@
           OnActionCancelled="HandleActionCancelled"
           OnActionEdit="HandleActionEdit" />
 
+<AttachmentUploader @ref="attachmentUploader" ConversationId="currentConversationId" OnAttachmentUploaded="HandleAttachmentUploaded" />
+
 <ChatInput MessageText="@currentMessage"
            MessageTextChanged="OnMessageTextChanged"
            IsProcessing="@isProcessing"
            QuickActions="@quickActions"
            OnSendMessage="SendMessage"
-           OnQuickAction="HandleQuickActionCallback" />
+           OnQuickAction="HandleQuickActionCallback"
+           OnAttachmentClick="HandleAttachmentClick" />
 
 @code {
     private HubConnection? hubConnection;
@@ -82,6 +85,7 @@
     private bool isVaultBrowserOpen;
     private string? pendingUserMessageClientId;
     private string? pendingAssistantMessageClientId;
+    private AttachmentUploader? attachmentUploader;
     private static readonly Regex FileOpPattern1 = new(
         @"(?i)(append|create|write|modify|patch|delete)\s+to\s+file:\s*[`""']?([^`""'\n]+\.md)[`""']?\s+with\s+content:\s*[""']([^""'\n]+)[""']",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
@@ -530,6 +534,22 @@
         currentMessage = action.Prefix;
         StateHasChanged();
         return Task.CompletedTask;
+    }
+
+    private async Task HandleAttachmentClick()
+    {
+        // If no conversation is selected, create a new one first
+        if (!currentConversationId.HasValue)
+        {
+            await HandleNewConversationAsync();
+            // Wait a bit for the component to render
+            await Task.Delay(100);
+        }
+
+        if (attachmentUploader is not null)
+        {
+            await attachmentUploader.TriggerFileSelection();
+        }
     }
 
     private async Task HandleConversationSelectedAsync(Guid conversationId)
@@ -1570,6 +1590,13 @@
         
         // Auto-send the message
         await SendMessage();
+    }
+
+    private async Task HandleAttachmentUploaded()
+    {
+        // Refresh conversation metadata if needed
+        await RefreshConversationListAsync();
+        StateHasChanged();
     }
 
     private void OpenSettings()
