@@ -9,10 +9,10 @@ using ObsidianAI.Domain.Services;
 using ObsidianAI.Infrastructure.Configuration;
 using ObsidianAI.Infrastructure.Data;
 using ObsidianAI.Infrastructure.Data.Repositories;
-using ObsidianAI.Infrastructure.Services;
 using ObsidianAI.Infrastructure.Agents;
 using ObsidianAI.Infrastructure.LLM;
 using ObsidianAI.Infrastructure.Middleware;
+using ObsidianAI.Infrastructure.Services;
 using ObsidianAI.Infrastructure.Vault;
 
 namespace ObsidianAI.Infrastructure.DI;
