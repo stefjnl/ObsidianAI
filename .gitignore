@@ -81,6 +81,9 @@ PublishProfiles/
 local.settings.json
 secrets.json
 appsettings.local.json
+*.secrets.json
+.secrets/
+UserSecrets/
 
 ## Ignore temporary files
 *~

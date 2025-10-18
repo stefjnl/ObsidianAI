@@ -50,8 +50,14 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
+    // UseExceptionHandler provides Blazor-specific error page for unhandled exceptions
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
+}
+else
+{
+    // In development, let exceptions bubble up for detailed error pages
+    app.UseDeveloperExceptionPage();
 }
 
 app.UseHttpsRedirection();
