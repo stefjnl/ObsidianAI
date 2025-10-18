@@ -477,6 +477,31 @@ public static class EndpointRegistration
             return Results.Ok(payload);
         });
 
+        app.MapGet("/vault/read", async (
+            string path,
+            ReadFileUseCase useCase,
+            CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return Results.BadRequest("File path is required.");
+            }
+
+            try
+            {
+                var content = await useCase.ExecuteAsync(path, cancellationToken).ConfigureAwait(false);
+                return Results.Ok(new { path, content });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 500);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem($"An error occurred while reading the file: {ex.Message}", statusCode: 500);
+            }
+        });
+
         app.MapPost("/conversations/{id:guid}/attachments", async (
             Guid id,
             HttpRequest request,

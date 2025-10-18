@@ -1,6 +1,7 @@
 @using ObsidianAI.Web.Models
 @using ObsidianAI.Web.Services
 @inject IChatService ChatService
+@inject IVaultService VaultService
 @inject ILogger<VaultBrowser> Logger
 
 <div class="vault-browser @(IsOpen ? "vault-browser-open" : "")">
@@ -9,42 +10,57 @@
         <button class="vault-close-btn" type="button" @onclick="OnClose" aria-label="Close vault browser">✕</button>
     </div>
 
-    <div class="vault-browser-content">
-        @if (IsLoading)
+    <div class="vault-browser-body">
+        @if (!string.IsNullOrEmpty(selectedFilePath))
         {
-            <div class="vault-loading">
-                <div class="vault-loading-spinner"></div>
-                <p>Loading vault contents...</p>
+            <!-- File Viewer Panel -->
+            <div class="vault-file-viewer">
+                <FileViewer FilePath="@selectedFilePath"
+                           FileContent="@selectedFileContent"
+                           IsLoading="@isLoadingFile"
+                           ErrorMessage="@fileErrorMessage"
+                           OnClose="CloseFileViewer" />
             </div>
         }
-        else if (HasError)
-        {
-            <div class="vault-error">
-                <p>⚠️ Failed to load vault contents</p>
-                <button class="btn btn-secondary" @onclick="() => LoadVaultContents()">Retry</button>
-            </div>
-        }
-        else if (Items.Count == 0)
-        {
-            <div class="vault-empty">
-                <p>📭 No files found in vault</p>
-            </div>
-        }
-        else
-        {
-            <div class="vault-breadcrumb">
-                <button class="vault-breadcrumb-btn" @onclick="() => LoadVaultContents(null)">
-                    🏠 Root
-                </button>
-            </div>
 
-            <div class="vault-tree">
-                @foreach (var item in Items)
-                {
-                    <VaultTreeNode Item="item" Level="0" OnItemClick="HandleItemClick" OnFolderExpand="HandleFolderExpand" />
-                }
-            </div>
-        }
+        <!-- File Tree Panel -->
+        <div class="vault-browser-content @(string.IsNullOrEmpty(selectedFilePath) ? "vault-browser-content-full" : "")">
+            @if (IsLoading)
+            {
+                <div class="vault-loading">
+                    <div class="vault-loading-spinner"></div>
+                    <p>Loading vault contents...</p>
+                </div>
+            }
+            else if (HasError)
+            {
+                <div class="vault-error">
+                    <p>⚠️ Failed to load vault contents</p>
+                    <button class="btn btn-secondary" @onclick="() => LoadVaultContents()">Retry</button>
+                </div>
+            }
+            else if (Items.Count == 0)
+            {
+                <div class="vault-empty">
+                    <p>📭 No files found in vault</p>
+                </div>
+            }
+            else
+            {
+                <div class="vault-breadcrumb">
+                    <button class="vault-breadcrumb-btn" @onclick="() => LoadVaultContents(null)">
+                        🏠 Root
+                    </button>
+                </div>
+
+                <div class="vault-tree">
+                    @foreach (var item in Items)
+                    {
+                        <VaultTreeNode Item="item" Level="0" OnItemClick="HandleItemClick" OnFolderExpand="HandleFolderExpand" />
+                    }
+                </div>
+            }
+        </div>
     </div>
 </div>
 
@@ -62,6 +78,10 @@
     private bool IsLoading { get; set; }
     private bool HasError { get; set; }
     private string CurrentPath { get; set; } = "/";
+    private string? selectedFilePath;
+    private string? selectedFileContent;
+    private bool isLoadingFile;
+    private string? fileErrorMessage;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -142,7 +162,40 @@
         if (item.Type == VaultItemType.File)
         {
             Logger.LogInformation("File selected: {Path}", item.Path);
-            await OnFileSelected.InvokeAsync(item);
+            await LoadFileContentAsync(item.Path);
         }
+    }
+
+    private async Task LoadFileContentAsync(string path)
+    {
+        selectedFilePath = path;
+        selectedFileContent = null;
+        isLoadingFile = true;
+        fileErrorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            selectedFileContent = await VaultService.ReadFileAsync(path);
+            Logger.LogInformation("Successfully loaded file content for: {Path}", path);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load file content: {Path}", path);
+            fileErrorMessage = $"Failed to load file: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingFile = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseFileViewer()
+    {
+        selectedFilePath = null;
+        selectedFileContent = null;
+        fileErrorMessage = null;
+        StateHasChanged();
     }
 }

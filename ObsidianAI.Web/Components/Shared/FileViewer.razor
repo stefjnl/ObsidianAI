@@ -1,0 +1,110 @@
+@using ObsidianAI.Web.Models
+@using ObsidianAI.Web.Services
+@inject IJSRuntime JSRuntime
+
+@if (!string.IsNullOrEmpty(FilePath))
+{
+    <div class="file-viewer">
+        <div class="file-viewer-header">
+            <div class="file-viewer-title">
+                <span class="file-icon">📄</span>
+                <h3>@System.IO.Path.GetFileName(FilePath)</h3>
+            </div>
+            <button class="file-viewer-close-btn" type="button" @onclick="OnClose" aria-label="Close file viewer">✕</button>
+        </div>
+        
+        <div class="file-viewer-content">
+            @if (IsLoading)
+            {
+                <div class="file-viewer-loading">
+                    <div class="spinner"></div>
+                    <p>Loading file content...</p>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(ErrorMessage))
+            {
+                <div class="file-viewer-error">
+                    <p>⚠️ @ErrorMessage</p>
+                </div>
+            }
+            else
+            {
+                <div class="file-viewer-text-container">
+                    <div class="file-viewer-text">
+                        @if (IsMarkdownFile)
+                        {
+                            <MarkdownContent Content="@FileContent" />
+                        }
+                        else
+                        {
+                            <pre class="file-viewer-raw">@FileContent</pre>
+                        }
+                    </div>
+                    <button class="file-viewer-copy-btn" 
+                            type="button" 
+                            @onclick="CopyToClipboard" 
+                            title="Copy to clipboard"
+                            aria-label="Copy file content">
+                        @if (copySuccess)
+                        {
+                            <span>✓</span>
+                        }
+                        else
+                        {
+                            <span>📋</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? FilePath { get; set; }
+
+    [Parameter]
+    public string? FileContent { get; set; }
+
+    [Parameter]
+    public bool IsLoading { get; set; }
+
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnFilePathChanged { get; set; }
+
+    private bool copySuccess = false;
+
+    private bool IsMarkdownFile => !string.IsNullOrEmpty(FilePath) && 
+        (FilePath.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
+         FilePath.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase));
+
+    private async Task CopyToClipboard()
+    {
+        if (string.IsNullOrEmpty(FileContent))
+            return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", FileContent);
+            copySuccess = true;
+            StateHasChanged();
+            
+            // Reset the success indicator after 2 seconds
+            await Task.Delay(2000);
+            copySuccess = false;
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            // Clipboard API might not be available or permission denied
+            copySuccess = false;
+        }
+    }
+}
