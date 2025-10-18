@@ -484,29 +484,16 @@ public static class EndpointRegistration
             IAttachmentValidator attachmentValidator,
             CancellationToken cancellationToken) =>
         {
-            if (!request.HasFormContentType)
-            {
-                return Results.BadRequest("Request must have multipart/form-data content type.");
-            }
-
             var form = await request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
             var file = form.Files.GetFile("file");
 
-            if (file == null || file.Length == 0)
+            var validationResult = attachmentValidator.ValidateFileUpload(request, file);
+            if (!validationResult.IsValid)
             {
-                return Results.BadRequest("No file uploaded.");
-            }
-
-            if (file.Length > 1_000_000) // 1MB limit
-            {
-                return Results.BadRequest("File size exceeds 1MB limit.");
+                return Results.BadRequest(validationResult.ErrorMessage);
             }
 
             var extension = System.IO.Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (!attachmentValidator.IsFileTypeAllowed(extension))
-            {
-                return Results.BadRequest($"Only {string.Join(", ", attachmentValidator.AllowedFileTypes)} files are allowed.");
-            }
 
             using var reader = new System.IO.StreamReader(file.OpenReadStream());
             var content = await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
