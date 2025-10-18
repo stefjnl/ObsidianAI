@@ -4,3 +4,4 @@
 - Register services through extension methods (`ServiceRegistration.AddObsidianApiServices`) so `Program.cs` stays declarative; new services should be appended there with clear lifetimes.
 - Define routes exclusively inside `EndpointRegistration.MapObsidianEndpoints`; follow the existing pattern of binding request DTOs, invoking use cases, and projecting anonymous objects.
 - When adding new endpoints, provide minimal result shapes (anonymous objects) rather than returning raw entities to avoid leaking database schemas.
+- For file upload endpoints, use `HttpRequest` parameter with manual form parsing (`request.ReadFormAsync()` and `form.Files.GetFile("file")`) instead of direct `IFormFile` binding to ensure reliable multipart/form-data handling in minimal APIs. Add `.DisableAntiforgery()` to file upload endpoints.

@@ -89,6 +89,9 @@ public class StreamChatUseCase
 
         var agent = await _agentFactory.CreateAgentAsync(instructions, tools, _threadProvider, ct).ConfigureAwait(false);
         var threadId = await EnsureThreadAsync(conversation, persistenceContext.ThreadId, agent, ct).ConfigureAwait(false);
+        
+        // Format message with attachments if present
+        var messageToSend = FormatMessageWithAttachments(input);
         var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
 
         var initialMetadataPayload = JsonSerializer.Serialize(new
@@ -100,7 +103,7 @@ public class StreamChatUseCase
 
         var responseBuilder = new StringBuilder();
 
-        await foreach (var evt in agent.StreamAsync(input.Message, threadId, ct).ConfigureAwait(false))
+        await foreach (var evt in agent.StreamAsync(messageToSend, threadId, ct).ConfigureAwait(false))
         {
             if (evt.Kind == ChatStreamEventKind.Text && !string.IsNullOrEmpty(evt.Text))
             {
@@ -298,6 +301,34 @@ public class StreamChatUseCase
         }
 
         return trimmed.Substring(0, MaxLength) + "…";
+    }
+
+    private static string FormatMessageWithAttachments(ChatInput input)
+    {
+        if (input.Attachments == null || input.Attachments.Count == 0)
+        {
+            return input.Message;
+        }
+
+        var builder = new StringBuilder();
+        
+        // Add attachment context at the beginning
+        builder.AppendLine("[ATTACHED FILES - These files are provided as context for analysis]");
+        builder.AppendLine();
+        
+        foreach (var attachment in input.Attachments)
+        {
+            builder.AppendLine($"File: {attachment.Filename} ({attachment.FileType})");
+            builder.AppendLine("--- BEGIN FILE CONTENT ---");
+            builder.AppendLine(attachment.Content);
+            builder.AppendLine("--- END FILE CONTENT ---");
+            builder.AppendLine();
+        }
+        
+        builder.AppendLine("[USER MESSAGE]");
+        builder.Append(input.Message);
+        
+        return builder.ToString();
     }
 
 }

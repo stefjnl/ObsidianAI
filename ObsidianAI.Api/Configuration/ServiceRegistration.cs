@@ -36,6 +36,8 @@ public static class ServiceRegistration
         services.AddObsidianAI(configuration);
         services.AddObsidianApplication();
 
+        services.AddAntiforgery();
+
         services.AddSingleton<ILlmClientFactory>(sp =>
         {
             var appSettings = sp.GetRequiredService<IOptions<AppSettings>>();

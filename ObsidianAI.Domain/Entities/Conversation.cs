@@ -59,6 +59,11 @@ public class Conversation
     public List<Message> Messages { get; set; } = new();
 
     /// <summary>
+    /// Attachments that belong to this conversation. EF Core populates this collection.
+    /// </summary>
+    public List<Attachment> Attachments { get; set; } = new();
+
+    /// <summary>
     /// Concurrency token used to opt into optimistic concurrency checks.
     /// </summary>
     public byte[]? RowVersion { get; set; }
@@ -76,6 +81,17 @@ public class Conversation
     {
         ArgumentNullException.ThrowIfNull(message);
         Messages.Add(message);
+        Touch();
+    }
+
+    /// <summary>
+    /// Adds the provided attachment and refreshes the updated timestamp.
+    /// </summary>
+    /// <param name="attachment">Attachment to associate with this conversation.</param>
+    public void AddAttachment(Attachment attachment)
+    {
+        ArgumentNullException.ThrowIfNull(attachment);
+        Attachments.Add(attachment);
         Touch();
     }
 }
