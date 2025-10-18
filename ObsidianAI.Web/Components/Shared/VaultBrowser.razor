@@ -62,19 +62,8 @@
 
         @if (!string.IsNullOrEmpty(selectedFilePath))
         {
-            <!-- Resize Handle - Between content and file viewer -->
-            <div class="vault-resize-handle @(_isResizing ? "vault-resize-handle-active" : "")"
-                 @onmousedown="StartResize"
-                 @onmousedown:preventDefault="true"
-                 @ontouchstart="StartTouchResize"
-                 @ontouchstart:preventDefault="true"
-                 @ontouchmove="HandleTouchResize"
-                 @ontouchend="EndResize">
-                <div class="vault-resize-handle-indicator"></div>
-            </div>
-
-            <!-- File Viewer Panel (Resizable) - RIGHT SIDE -->
-            <div class="vault-file-viewer" style="width: @(FileViewerWidth)px; flex-shrink: 0;">
+            <!-- File Viewer Panel - Overlays on left side -->
+            <div class="vault-file-viewer">
                 <FileViewer FilePath="@selectedFilePath"
                            FileContent="@selectedFileContent"
                            IsLoading="@isLoadingFile"
