@@ -35,7 +35,7 @@ Implement **Option 1 + Option 4 Combined**: Separate endpoints and services for 
 
 **Implementation notes:**
 - `ReadFileUseCase` should use `IMcpClientProvider` to get MCP client
-- Call appropriate MCP tool (likely `obsidian_read_file` or similar)
+- Call appropriate MCP tool (`obsidian_get_file_contents`) for consistency with the new use case
 - Extract text from `TextContentBlock` in the response
 - No streaming needed for file reads
 
