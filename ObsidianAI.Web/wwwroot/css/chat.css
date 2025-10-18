@@ -1502,21 +1502,62 @@ body {
    ============================================ */
 .vault-browser {
     position: fixed;
-    right: -480px;
+    right: 0;
     top: 0;
-    width: 480px;
+    width: var(--vault-browser-width, 480px);
     height: 100vh;
     background: #ffffff;
     box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
     z-index: 1000;
-    transition: right 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateX(100%);
     display: flex;
     flex-direction: column;
     border-left: 1px solid #e8eaed;
 }
 
 .vault-browser-open {
-    right: 0;
+    transform: translateX(0);
+}
+
+/* Vault Browser Container Resize Handle */
+.vault-browser-resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 8px;
+    height: 100%;
+    cursor: ew-resize;
+    z-index: 1001;
+    background: transparent;
+    transition: background-color 0.2s ease;
+    user-select: none;
+    touch-action: none;
+}
+
+.vault-browser-resize-handle:hover,
+.vault-browser-resize-handle.resizing {
+    background: rgba(37, 99, 235, 0.1);
+}
+
+.vault-browser-resize-handle-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px;
+    height: 40px;
+    background: #cbd5e1;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+    pointer-events: none;
+}
+
+.vault-browser-resize-handle:hover .vault-browser-resize-handle-indicator,
+.vault-browser-resize-handle.resizing .vault-browser-resize-handle-indicator {
+    background: #2563eb;
+    height: 60px;
+    box-shadow: 0 0 8px rgba(37, 99, 235, 0.3);
 }
 
 .vault-browser-header {
@@ -1546,28 +1587,76 @@ body {
 
 .vault-browser-body {
     display: flex;
+    flex-direction: row;
     height: calc(100% - 80px);
     overflow: hidden;
+    position: relative;
+    width: 100%;
 }
 
 .vault-browser-content {
-    flex: 1;
+    flex: 1 1 auto;
     padding: 24px;
     overflow-y: auto;
+    overflow-x: hidden;
     background: transparent;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    min-width: 200px;
+    width: 0; /* Force flex child to respect flex-basis */
 }
 
 .vault-browser-content-full {
-    flex: 1;
+    flex: 1 1 auto;
+    width: auto;
 }
 
 .vault-file-viewer {
-    flex: 1;
     display: flex;
     flex-direction: column;
     border-left: 1px solid #e8eaed;
     background: #ffffff;
+    overflow: hidden;
+    height: 100%;
+}
+
+/* Resize Handle Styles */
+.vault-resize-handle {
+    width: 8px;
+    background: transparent;
+    cursor: ew-resize;
+    position: relative;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    touch-action: none;
+}
+
+.vault-resize-handle:hover,
+.vault-resize-handle-active {
+    background: rgba(37, 99, 235, 0.1);
+}
+
+.vault-resize-handle-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px;
+    height: 40px;
+    background: #cbd5e1;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+    pointer-events: none;
+}
+
+.vault-resize-handle:hover .vault-resize-handle-indicator,
+.vault-resize-handle-active .vault-resize-handle-indicator {
+    background: #2563eb;
+    width: 4px;
+    height: 60px;
+    box-shadow: 0 0 8px rgba(37, 99, 235, 0.3);
 }
 
 .file-viewer {

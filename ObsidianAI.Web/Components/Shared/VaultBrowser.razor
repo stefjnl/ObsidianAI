@@ -3,39 +3,26 @@
 @inject IChatService ChatService
 @inject IVaultService VaultService
 @inject ILogger<VaultBrowser> Logger
+@inject IJSRuntime JS
 
-<div class="vault-browser @(IsOpen ? "vault-browser-open" : "")">
+<div class="vault-browser @(IsOpen ? "vault-browser-open" : "")" 
+     style="--vault-browser-width: @(BrowserWidth)px;">
+    <!-- Resize Handle for entire vault browser -->
+    <div class="vault-browser-resize-handle @(_isBrowserResizing ? "resizing" : "")"
+         @ref="_resizeHandleRef"
+         @onmousedown="StartBrowserResize"
+         @onmousedown:preventDefault="true">
+        <div class="vault-browser-resize-handle-indicator"></div>
+    </div>
+    
     <div class="vault-browser-header">
         <h2>📁 Vault Browser</h2>
         <button class="vault-close-btn" type="button" @onclick="OnClose" aria-label="Close vault browser">✕</button>
     </div>
 
     <div class="vault-browser-body">
-        @if (!string.IsNullOrEmpty(selectedFilePath))
-        {
-            <!-- File Viewer Panel -->
-            <div class="vault-file-viewer" style="width: @(FileViewerWidth)px; cursor: @_resizeCursor;"
-                 @onmousedown="StartResize"
-                 @onmouseover="@(() => SetCursor(true))"
-                 @onmouseout="@(() => SetCursor(false))"
-                 @ontouchstart="StartTouchResize"
-                 @ontouchmove="HandleTouchResize"
-                 @ontouchend="EndResize">
-                <FileViewer FilePath="@selectedFilePath"
-                           FileContent="@selectedFileContent"
-                           IsLoading="@isLoadingFile"
-                           ErrorMessage="@fileErrorMessage"
-                           OnClose="CloseFileViewer" />
-            </div>
-        }
-
-        <!-- File Tree Panel -->
-        <div class="vault-browser-content @(string.IsNullOrEmpty(selectedFilePath) ? "vault-browser-content-full" : "")"
-             @onmouseup="EndResize"
-             @onmousemove="HandleResize"
-             @onmouseleave="EndResize"
-             @ontouchmove="HandleTouchResize"
-             @ontouchend="EndResize">
+        <!-- File Tree Panel (Flexible) - LEFT SIDE -->
+        <div class="vault-browser-content @(string.IsNullOrEmpty(selectedFilePath) ? "vault-browser-content-full" : "")">
             @if (IsLoading)
             {
                 <div class="vault-loading">
@@ -72,6 +59,29 @@
                 </div>
             }
         </div>
+
+        @if (!string.IsNullOrEmpty(selectedFilePath))
+        {
+            <!-- Resize Handle - Between content and file viewer -->
+            <div class="vault-resize-handle @(_isResizing ? "vault-resize-handle-active" : "")"
+                 @onmousedown="StartResize"
+                 @onmousedown:preventDefault="true"
+                 @ontouchstart="StartTouchResize"
+                 @ontouchstart:preventDefault="true"
+                 @ontouchmove="HandleTouchResize"
+                 @ontouchend="EndResize">
+                <div class="vault-resize-handle-indicator"></div>
+            </div>
+
+            <!-- File Viewer Panel (Resizable) - RIGHT SIDE -->
+            <div class="vault-file-viewer" style="width: @(FileViewerWidth)px; flex-shrink: 0;">
+                <FileViewer FilePath="@selectedFilePath"
+                           FileContent="@selectedFileContent"
+                           IsLoading="@isLoadingFile"
+                           ErrorMessage="@fileErrorMessage"
+                           OnClose="CloseFileViewer" />
+            </div>
+        }
     </div>
 </div>
 
@@ -94,14 +104,23 @@
     private bool isLoadingFile;
     private string? fileErrorMessage;
 
-    // Resizing properties
-    private double FileViewerWidth { get; set; } = 300; // Default width in pixels
-    private const double MinFileViewerWidth = 200;
-    private const double MaxFileViewerWidth = 600;
+    // Browser container resizing properties
+    private ElementReference _resizeHandleRef;
+    private DotNetObjectReference<VaultBrowser>? _dotNetHelper;
+    private double BrowserWidth { get; set; } = 480; // Default width in pixels
+    private const double MinBrowserWidth = 300;
+    private const double MaxBrowserWidth = 1200;
+    private bool _isBrowserResizing;
+    private double _browserStartX;
+    private double _browserStartWidth;
+
+    // File viewer resizing properties (legacy, can be removed if not needed)
+    private double FileViewerWidth { get; set; } = 400;
+    private const double MinFileViewerWidth = 250;
+    private const double MaxFileViewerWidth = 800;
     private bool _isResizing;
     private double _startX;
     private double _startWidth;
-    private string _resizeCursor = "default";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -219,21 +238,12 @@
         StateHasChanged();
     }
 
-    private void SetCursor(bool isOverHandle)
-    {
-        _resizeCursor = isOverHandle ? "ew-resize" : "default";
-        StateHasChanged();
-    }
-
     private void StartResize(MouseEventArgs e)
     {
-        // Only start resizing if the mouse is near the right edge of the file viewer
-        if (e.OffsetX >= FileViewerWidth - 10)
-        {
-            _isResizing = true;
-            _startX = e.ClientX;
-            _startWidth = FileViewerWidth;
-        }
+        _isResizing = true;
+        _startX = e.ClientX;
+        _startWidth = FileViewerWidth;
+        StateHasChanged();
     }
 
     private void StartTouchResize(TouchEventArgs e)
@@ -241,13 +251,10 @@
         if (e.Touches.Length > 0)
         {
             var touch = e.Touches[0];
-            // Only start resizing if the touch is near the right edge
-            if (touch.ClientX >= FileViewerWidth - 10)
-            {
-                _isResizing = true;
-                _startX = touch.ClientX;
-                _startWidth = FileViewerWidth;
-            }
+            _isResizing = true;
+            _startX = touch.ClientX;
+            _startWidth = FileViewerWidth;
+            StateHasChanged();
         }
     }
 
@@ -255,7 +262,7 @@
     {
         if (_isResizing)
         {
-            var deltaX = e.ClientX - _startX;
+            var deltaX = _startX - e.ClientX; // Inverted: drag left = positive delta = wider
             var newWidth = _startWidth + deltaX;
             FileViewerWidth = Math.Clamp(newWidth, MinFileViewerWidth, MaxFileViewerWidth);
             StateHasChanged();
@@ -267,15 +274,67 @@
         if (_isResizing && e.Touches.Length > 0)
         {
             var touch = e.Touches[0];
-            var deltaX = touch.ClientX - _startX;
+            var deltaX = _startX - touch.ClientX; // Inverted: drag left = positive delta = wider
             var newWidth = _startWidth + deltaX;
             FileViewerWidth = Math.Clamp(newWidth, MinFileViewerWidth, MaxFileViewerWidth);
             StateHasChanged();
         }
     }
 
+    private void EndResize(MouseEventArgs e)
+    {
+        if (_isResizing)
+        {
+            _isResizing = false;
+            StateHasChanged();
+        }
+    }
+
     private void EndResize()
     {
-        _isResizing = false;
+        if (_isResizing)
+        {
+            _isResizing = false;
+            StateHasChanged();
+        }
+    }
+
+    // Browser container resize methods
+    private async Task StartBrowserResize(MouseEventArgs e)
+    {
+        _isBrowserResizing = true;
+        _browserStartX = e.ClientX;
+        _browserStartWidth = BrowserWidth;
+        Logger.LogInformation("Started browser resize at X={X}, Width={Width}", e.ClientX, BrowserWidth);
+        
+        _dotNetHelper ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("vaultBrowser.startResize", _dotNetHelper);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void HandleBrowserResize(double clientX)
+    {
+        if (_isBrowserResizing)
+        {
+            var deltaX = _browserStartX - clientX; // Drag left = positive delta = wider
+            var newWidth = _browserStartWidth + deltaX;
+            var clampedWidth = Math.Clamp(newWidth, MinBrowserWidth, MaxBrowserWidth);
+            Logger.LogInformation("Resizing: StartX={StartX}, CurrentX={CurrentX}, Delta={Delta}, NewWidth={NewWidth}, Clamped={Clamped}",
+                _browserStartX, clientX, deltaX, newWidth, clampedWidth);
+            BrowserWidth = clampedWidth;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void EndBrowserResize()
+    {
+        if (_isBrowserResizing)
+        {
+            _isBrowserResizing = false;
+            Logger.LogInformation("Ended browser resize at Width={Width}", BrowserWidth);
+            StateHasChanged();
+        }
     }
 }

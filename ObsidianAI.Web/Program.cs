@@ -45,6 +45,9 @@ builder.Services.AddHttpClient<IVaultService, VaultService>(client =>
     client.Timeout = TimeSpan.FromMinutes(5);
 });
 
+// Register VaultResizeService for UI resize functionality
+builder.Services.AddScoped<IVaultResizeService, VaultResizeService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
