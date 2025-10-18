@@ -82,7 +82,7 @@ function enhanceCodeBlock(pre, codeBlock) {
     
     // Detect language from class name (e.g., 'language-javascript')
     let language = 'text';
-    const classMatch = codeBlock.className.match(/language-(\\w+)/);
+    const classMatch = codeBlock.className.match(/language-(\w+)/);
     if (classMatch) {
         language = classMatch[1];
     } else if (codeBlock.classList.length > 0) {
