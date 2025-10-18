@@ -23,8 +23,7 @@ public class StreamChatUseCase
     private readonly IAIAgentFactory _agentFactory;
     private readonly IAgentThreadProvider _threadProvider;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
-    private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
-    private readonly IMicrosoftLearnMcpClientProvider? _microsoftLearnMcpClientProvider;
+    private readonly IMcpToolCatalog? _toolCatalog;
     private readonly IVaultPathResolver _vaultPathResolver;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
@@ -35,11 +34,10 @@ public class StreamChatUseCase
         IAgentThreadProvider threadProvider,
         Domain.Services.IFileOperationExtractor extractor,
         IConversationRepository conversationRepository,
-        IMessageRepository messageRepository,
-        IVaultPathResolver vaultPathResolver,
-        ILogger<StreamChatUseCase>? logger = null,
-        Application.Services.IMcpClientProvider? mcpClientProvider = null,
-        IMicrosoftLearnMcpClientProvider? microsoftLearnMcpClientProvider = null)
+    IMessageRepository messageRepository,
+    IVaultPathResolver vaultPathResolver,
+    IMcpToolCatalog toolCatalog,
+    ILogger<StreamChatUseCase>? logger = null)
     {
         _agentFactory = agentFactory;
         _threadProvider = threadProvider ?? throw new ArgumentNullException(nameof(threadProvider));
@@ -48,8 +46,7 @@ public class StreamChatUseCase
         _messageRepository = messageRepository;
         _vaultPathResolver = vaultPathResolver ?? throw new ArgumentNullException(nameof(vaultPathResolver));
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamChatUseCase>.Instance;
-        _mcpClientProvider = mcpClientProvider;
-        _microsoftLearnMcpClientProvider = microsoftLearnMcpClientProvider;
+    _toolCatalog = toolCatalog ?? throw new ArgumentNullException(nameof(toolCatalog));
     }
 
     /// <summary>
@@ -76,40 +73,17 @@ public class StreamChatUseCase
         var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
 
         List<object>? tools = null;
-        var obsidianToolCount = 0;
-        var microsoftLearnToolCount = 0;
-
-        if (_mcpClientProvider != null || _microsoftLearnMcpClientProvider != null)
+        if (_toolCatalog is not null)
         {
-            tools = new List<object>();
-
-            if (_mcpClientProvider != null)
+            var snapshot = await _toolCatalog.GetToolsAsync(ct).ConfigureAwait(false);
+            if (snapshot.Tools.Count > 0)
             {
-                var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
-                if (mcpClient != null)
-                {
-                    var obsidianTools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
-                    obsidianToolCount = AppendTools(tools, obsidianTools);
-                }
-            }
-
-            if (_microsoftLearnMcpClientProvider != null)
-            {
-                var learnClient = await _microsoftLearnMcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
-                if (learnClient != null)
-                {
-                    var learnTools = await learnClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
-                    microsoftLearnToolCount = AppendTools(tools, learnTools);
-                }
-            }
-
-            if (tools.Count == 0)
-            {
-                tools = null;
-            }
-            else
-            {
-                _logger.LogInformation("📦 Merged {ObsidianCount} Obsidian + {MicrosoftLearnCount} Microsoft Learn tools", obsidianToolCount, microsoftLearnToolCount);
+                tools = snapshot.Tools.ToList();
+                _logger.LogInformation(
+                    "📦 Loaded {ObsidianCount} Obsidian + {MicrosoftLearnCount} Microsoft Learn tools (expires {ExpiresAt:O})",
+                    snapshot.ObsidianToolCount,
+                    snapshot.MicrosoftLearnToolCount,
+                    snapshot.ExpiresAt);
             }
         }
 
@@ -326,36 +300,4 @@ public class StreamChatUseCase
         return trimmed.Substring(0, MaxLength) + "…";
     }
 
-    private static int AppendTools(List<object> target, IEnumerable<object> tools)
-    {
-        if (tools == null)
-        {
-            return 0;
-        }
-
-        var added = 0;
-        foreach (var tool in tools)
-        {
-            if (tool is null)
-            {
-                continue;
-            }
-
-            var name = TryGetToolName(tool);
-            if (name != null && target.Any(existing => string.Equals(TryGetToolName(existing), name, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            target.Add(tool);
-            added++;
-        }
-
-        return added;
-    }
-
-    private static string? TryGetToolName(object tool)
-    {
-        return tool.GetType().GetProperty("Name")?.GetValue(tool) as string;
-    }
 }

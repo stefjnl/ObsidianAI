@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using ModelContextProtocol.Protocol;
+using ObsidianAI.Application.Contracts;
 using ObsidianAI.Domain.Services;
 
 namespace ObsidianAI.Application.Services;
@@ -18,15 +17,19 @@ public sealed class VaultPathResolver : IVaultPathResolver
     private readonly IMcpClientProvider _mcpClientProvider;
     private readonly IVaultPathNormalizer _vaultPathNormalizer;
     private readonly ILogger<VaultPathResolver> _logger;
+    private readonly IVaultIndexCache _vaultIndexCache;
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(15);
 
     public VaultPathResolver(
         IMcpClientProvider mcpClientProvider,
         IVaultPathNormalizer vaultPathNormalizer,
-        ILogger<VaultPathResolver> logger)
+        ILogger<VaultPathResolver> logger,
+        IVaultIndexCache vaultIndexCache)
     {
         _mcpClientProvider = mcpClientProvider ?? throw new ArgumentNullException(nameof(mcpClientProvider));
         _vaultPathNormalizer = vaultPathNormalizer ?? throw new ArgumentNullException(nameof(vaultPathNormalizer));
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<VaultPathResolver>.Instance;
+        _vaultIndexCache = vaultIndexCache ?? throw new ArgumentNullException(nameof(vaultIndexCache));
     }
 
     /// <inheritdoc />
@@ -44,6 +47,18 @@ public sealed class VaultPathResolver : IVaultPathResolver
             return fallback;
         }
 
+        var fallbackKey = _vaultPathNormalizer.CreateMatchKey(fallback);
+
+        if (_vaultIndexCache.TryGet(VaultIndexCacheKeys.Root, out var cachedEntry))
+        {
+            var cachedMatch = TryResolveFromPaths(cachedEntry.Paths, comparisonKey, fallbackKey);
+            if (cachedMatch is not null)
+            {
+                _logger.LogDebug("Resolved '{Candidate}' from cached vault index.", candidatePath);
+                return cachedMatch;
+            }
+        }
+
         try
         {
             var client = await _mcpClientProvider.GetClientAsync(cancellationToken).ConfigureAwait(false);
@@ -58,27 +73,20 @@ public sealed class VaultPathResolver : IVaultPathResolver
                 new Dictionary<string, object?>(),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var vaultPaths = ExtractVaultPaths(toolResult.Content);
+            var contentBlocks = toolResult.Content?.ToList();
+            var vaultPaths = VaultToolResponseParser.ExtractPaths(contentBlocks);
             if (vaultPaths.Count == 0)
             {
                 _logger.LogDebug("obsidian_list_files_in_vault returned no paths; using fallback for '{Candidate}'", candidatePath);
                 return fallback;
             }
 
-            var match = FindBestMatch(vaultPaths, comparisonKey);
+            _vaultIndexCache.Set(VaultIndexCacheKeys.Root, vaultPaths, Array.Empty<VaultItemDto>(), CacheDuration);
+
+            var match = TryResolveFromPaths(vaultPaths, comparisonKey, fallbackKey);
             if (match is not null)
             {
                 return match;
-            }
-
-            var fallbackKey = _vaultPathNormalizer.CreateMatchKey(fallback);
-            if (!string.Equals(fallbackKey, comparisonKey, StringComparison.Ordinal))
-            {
-                match = FindBestMatch(vaultPaths, fallbackKey);
-                if (match is not null)
-                {
-                    return match;
-                }
             }
 
             _logger.LogDebug("No vault path matched '{Candidate}', returning fallback '{Fallback}'", candidatePath, fallback);
@@ -93,68 +101,6 @@ public sealed class VaultPathResolver : IVaultPathResolver
             _logger.LogWarning(ex, "Failed to resolve vault path for '{Candidate}'. Returning fallback normalized path.", candidatePath);
             return fallback;
         }
-    }
-
-    private IReadOnlyList<string> ExtractVaultPaths(IEnumerable<ContentBlock>? content)
-    {
-        if (content is null)
-        {
-            return Array.Empty<string>();
-        }
-
-        var textBlock = content.OfType<TextContentBlock>().FirstOrDefault();
-        if (textBlock is null || string.IsNullOrWhiteSpace(textBlock.Text))
-        {
-            return Array.Empty<string>();
-        }
-
-        var text = textBlock.Text.Trim();
-        if (string.IsNullOrEmpty(text))
-        {
-            return Array.Empty<string>();
-        }
-
-        if (TryParseJsonArray(text, out var parsed))
-        {
-            return parsed;
-        }
-
-        var splitPaths = text
-            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(segment => segment.Trim())
-            .Where(segment => !string.IsNullOrWhiteSpace(segment))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        return splitPaths;
-    }
-
-    private static bool TryParseJsonArray(string text, out IReadOnlyList<string> paths)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(text);
-            if (doc.RootElement.ValueKind == JsonValueKind.Array)
-            {
-                var list = doc.RootElement
-                    .EnumerateArray()
-                    .Select(element => element.ValueKind == JsonValueKind.String ? element.GetString() : null)
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => value!.Trim())
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray();
-
-                paths = list;
-                return list.Length > 0;
-            }
-        }
-        catch (JsonException)
-        {
-            // Ignore JSON parsing issues and fall back to newline handling.
-        }
-
-        paths = Array.Empty<string>();
-        return false;
     }
 
     private string? FindBestMatch(IEnumerable<string> vaultPaths, string normalizedInput)
@@ -197,6 +143,26 @@ public sealed class VaultPathResolver : IVaultPathResolver
             .FirstOrDefault();
 
         return containedByInput is null ? null : NormalizeDirectoryPath(containedByInput.Original);
+    }
+
+    private string? TryResolveFromPaths(IEnumerable<string> vaultPaths, string comparisonKey, string fallbackKey)
+    {
+        var match = FindBestMatch(vaultPaths, comparisonKey);
+        if (match is not null)
+        {
+            return match;
+        }
+
+        if (!string.Equals(fallbackKey, comparisonKey, StringComparison.Ordinal))
+        {
+            match = FindBestMatch(vaultPaths, fallbackKey);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 
     private static string NormalizeDirectoryPath(string path)

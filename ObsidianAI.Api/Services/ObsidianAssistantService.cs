@@ -21,8 +21,7 @@ namespace ObsidianAI.Api.Services
     public sealed class ObsidianAssistantService
     {
         private readonly ILlmClientFactory _llmFactory;
-    private readonly IMcpClientProvider _mcpClientProvider;
-    private readonly IMicrosoftLearnMcpClientProvider _microsoftLearnMcpClient;
+        private readonly IMcpToolCatalog _toolCatalog;
         private readonly IChatClient _chatClient;
         private ChatClientAgent? _agent;
         private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -36,31 +35,20 @@ namespace ObsidianAI.Api.Services
         /// </summary>
         /// <param name="llmFactory">Factory to create the configured IChatClient.</param>
         /// <param name="mcpClientProvider">Provider used to access the MCP client for tool discovery.</param>
-    public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpClientProvider mcpClientProvider, IMicrosoftLearnMcpClientProvider microsoftLearnMcpClient)
+        public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpToolCatalog toolCatalog)
+            : this(llmFactory, toolCatalog, DefaultInstructions, null)
         {
-            _llmFactory = llmFactory ?? throw new ArgumentNullException(nameof(llmFactory));
-            _mcpClientProvider = mcpClientProvider ?? throw new ArgumentNullException(nameof(mcpClientProvider));
-            _microsoftLearnMcpClient = microsoftLearnMcpClient ?? throw new ArgumentNullException(nameof(microsoftLearnMcpClient));
-            _chatClient = _llmFactory.CreateChatClient();
-            _instructions = DefaultInstructions;
-            _logger = null;
         }
 
-    public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpClientProvider mcpClientProvider, IMicrosoftLearnMcpClientProvider microsoftLearnMcpClient, string instructions)
+        public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpToolCatalog toolCatalog, string instructions)
+            : this(llmFactory, toolCatalog, instructions, null)
         {
-            _llmFactory = llmFactory ?? throw new ArgumentNullException(nameof(llmFactory));
-            _mcpClientProvider = mcpClientProvider ?? throw new ArgumentNullException(nameof(mcpClientProvider));
-            _microsoftLearnMcpClient = microsoftLearnMcpClient ?? throw new ArgumentNullException(nameof(microsoftLearnMcpClient));
-            _chatClient = _llmFactory.CreateChatClient();
-            _instructions = string.IsNullOrWhiteSpace(instructions) ? DefaultInstructions : instructions;
-            _logger = null;
         }
 
-    public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpClientProvider mcpClientProvider, IMicrosoftLearnMcpClientProvider microsoftLearnMcpClient, string instructions, ILogger<ObsidianAssistantService> logger)
+        public ObsidianAssistantService(ILlmClientFactory llmFactory, IMcpToolCatalog toolCatalog, string instructions, ILogger<ObsidianAssistantService>? logger)
         {
             _llmFactory = llmFactory ?? throw new ArgumentNullException(nameof(llmFactory));
-            _mcpClientProvider = mcpClientProvider ?? throw new ArgumentNullException(nameof(mcpClientProvider));
-            _microsoftLearnMcpClient = microsoftLearnMcpClient ?? throw new ArgumentNullException(nameof(microsoftLearnMcpClient));
+            _toolCatalog = toolCatalog ?? throw new ArgumentNullException(nameof(toolCatalog));
             _chatClient = _llmFactory.CreateChatClient();
             _instructions = string.IsNullOrWhiteSpace(instructions) ? DefaultInstructions : instructions;
             _logger = logger;
@@ -77,35 +65,26 @@ namespace ObsidianAI.Api.Services
                 if (!_isInitialized)
                 {
                     var tools = new List<AITool>();
-                    var mcpClient = await _mcpClientProvider.GetClientAsync(cancellationToken).ConfigureAwait(false);
-                    if (mcpClient != null)
+                    var snapshot = await _toolCatalog.GetToolsAsync(cancellationToken).ConfigureAwait(false);
+                    foreach (var tool in snapshot.Tools.OfType<AITool>())
                     {
-                        var discovered = await mcpClient.ListToolsAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-                        foreach (var tool in discovered.OfType<AITool>())
+                        if (!tools.Any(existing => string.Equals(existing.Name, tool.Name, StringComparison.OrdinalIgnoreCase)))
                         {
                             tools.Add(tool);
                         }
                     }
-                    else
-                    {
-                        _logger?.LogWarning("MCP client unavailable. Initializing assistant without tools.");
-                    }
 
-                    var learnClient = await _microsoftLearnMcpClient.GetClientAsync(cancellationToken).ConfigureAwait(false);
-                    if (learnClient != null)
+                    if (tools.Count == 0)
                     {
-                        var learnTools = await learnClient.ListToolsAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-                        foreach (var tool in learnTools.OfType<AITool>())
-                        {
-                            if (!tools.Any(existing => string.Equals(existing.Name, tool.Name, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                tools.Add(tool);
-                            }
-                        }
+                        _logger?.LogWarning("No MCP tools were loaded for the assistant. Initializing without tool support.");
                     }
                     else
                     {
-                        _logger?.LogDebug("Microsoft Learn MCP client unavailable. Continuing without Microsoft Learn tools.");
+                        _logger?.LogInformation(
+                            "📦 Loaded {ObsidianCount} Obsidian + {MicrosoftLearnCount} Microsoft Learn tools for assistant (expires {ExpiresAt:O})",
+                            snapshot.ObsidianToolCount,
+                            snapshot.MicrosoftLearnToolCount,
+                            snapshot.ExpiresAt);
                     }
 
                     _agent = _chatClient.CreateAIAgent(

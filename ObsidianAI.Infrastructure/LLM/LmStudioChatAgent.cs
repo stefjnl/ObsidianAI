@@ -109,11 +109,15 @@ namespace ObsidianAI.Infrastructure.LLM
                     {
                         if (content is FunctionCallContent fcc && !string.IsNullOrEmpty(fcc.Name))
                         {
-                            yield return ChatStreamEvent.ToolCall(fcc.Name);
+                            var payload = ToolStreamingFormatter.CreatePayload(fcc.Name, "call", arguments: fcc.Arguments);
+                            yield return ChatStreamEvent.ToolCall(fcc.Name, payload, "call");
                         }
                         else if (content is FunctionResultContent frc)
                         {
-                            // Check if tool result contains PENDING_CONFIRMATION from reflection middleware
+                            var toolName = ResolveToolName(frc);
+                            var payload = ToolStreamingFormatter.CreatePayload(toolName, "result", result: frc.Result);
+                            yield return ChatStreamEvent.ToolCall(toolName, payload, "result");
+
                             var actionCardJson = ExtractActionCardFromToolResult(frc.Result);
                             if (actionCardJson != null)
                             {
@@ -151,6 +155,12 @@ namespace ObsidianAI.Infrastructure.LLM
             }
 
             return null;
+        }
+
+        private static string ResolveToolName(object source, string fallback = "unknown")
+        {
+            var name = source.GetType().GetProperty("Name")?.GetValue(source) as string;
+            return string.IsNullOrWhiteSpace(name) ? fallback : name!;
         }
 
     }

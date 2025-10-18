@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using ObsidianAI.Domain.Models;
+using System.Text.Json;
 
 namespace ObsidianAI.Api.Streaming
 {
@@ -13,6 +14,11 @@ namespace ObsidianAI.Api.Streaming
     {
         private static readonly Meter Meter = new("ObsidianAI.Api.Streaming", "1.0.0");
         private static readonly Counter<long> ToolInvocationCounter = Meter.CreateCounter<long>("mcp.tool.invoked");
+        private static readonly JsonSerializerOptions ToolPayloadSerializerOptions = new(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = false,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        };
 
         /// <summary>
         /// Writes chat stream events as Server-Sent Events to the HTTP response.
@@ -39,9 +45,17 @@ namespace ObsidianAI.Api.Streaming
                     if (update.Kind == ChatStreamEventKind.ToolCall)
                     {
                         var toolName = update.ToolName ?? "unknown";
-                        ToolInvocationCounter.Add(1, KeyValuePair.Create<string, object?>("tool", toolName));
-                        logger.LogInformation("Sending tool_call event: {ToolName}", toolName);
-                        await context.Response.WriteAsync($"event: tool_call\ndata: {toolName}\n\n", ct);
+                        if (string.Equals(update.ToolPhase, "call", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ToolInvocationCounter.Add(1, KeyValuePair.Create<string, object?>("tool", toolName));
+                        }
+
+                        var payload = !string.IsNullOrWhiteSpace(update.ToolPayload)
+                            ? update.ToolPayload
+                            : JsonSerializer.Serialize(new { name = toolName, phase = update.ToolPhase ?? "unknown" }, ToolPayloadSerializerOptions);
+
+                        logger.LogInformation("Sending tool_call event: {ToolName} (phase: {Phase})", toolName, update.ToolPhase ?? "unknown");
+                        await context.Response.WriteAsync($"event: tool_call\ndata: {payload}\n\n", ct);
                         await context.Response.Body.FlushAsync(ct);
                     }
                     else if (update.Kind == ChatStreamEventKind.ActionCardMetadata && !string.IsNullOrEmpty(update.ActionCardData))
