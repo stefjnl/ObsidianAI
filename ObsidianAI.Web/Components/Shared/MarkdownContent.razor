@@ -1,4 +1,5 @@
 @using Markdig
+@using ObsidianAI.Web.Services
 @inject IJSRuntime JSRuntime
 
 <div class="markdown-content" @ref="markdownElement">
@@ -17,6 +18,7 @@
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
     .UseAdvancedExtensions()
     .UseSoftlineBreakAsHardlineBreak()
+    .UsePreciseSourceLocation()
     .Build();
 
     protected override void OnParametersSet()
@@ -58,10 +60,26 @@
 
         try
         {
-            return Markdown.ToHtml(markdown, Pipeline);
+            // Always apply unescape since we can't reliably detect escaped sequences in Razor
+            // The TextDecoderService will handle: \n, \r, \t, \", \\, \/, \b, \f, \uXXXX
+            var processedMarkdown = TextDecoderService.UnescapeJson(markdown);
+            
+            System.Diagnostics.Debug.WriteLine($"Markdown conversion - Original length: {markdown.Length}, Processed length: {processedMarkdown.Length}");
+            
+            // Check if unescaping actually changed anything
+            if (!string.Equals(markdown, processedMarkdown, StringComparison.Ordinal))
+            {
+                System.Diagnostics.Debug.WriteLine($"Unescape applied changes:");
+                System.Diagnostics.Debug.WriteLine($"  Original (first 150): {markdown.Substring(0, Math.Min(150, markdown.Length)).Replace("\n", "\\n").Replace("\r", "\\r")}");
+                System.Diagnostics.Debug.WriteLine($"  Processed (first 150): {processedMarkdown.Substring(0, Math.Min(150, processedMarkdown.Length)).Replace("\n", "\\n").Replace("\r", "\\r")}");
+            }
+
+            var html = Markdown.ToHtml(processedMarkdown, Pipeline);
+            return html;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"Markdown conversion error: {ex.Message}");
             // Fallback for malformed markdown during streaming
             return $"<pre>{System.Net.WebUtility.HtmlEncode(markdown)}</pre>";
         }

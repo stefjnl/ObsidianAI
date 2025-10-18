@@ -34,6 +34,17 @@ builder.Services.AddHttpClient<IChatService, ChatService>(client =>
     client.Timeout = TimeSpan.FromMinutes(5);
 });
 
+// Register VaultService for raw file operations without LLM processing
+builder.Services.AddHttpClient<IVaultService, VaultService>(client =>
+{
+    // Use Aspire service discovery if available, otherwise use direct port
+    var apiEndpoint = builder.Configuration.GetConnectionString("api")
+                      ?? "http://localhost:5095";
+
+    client.BaseAddress = new Uri(apiEndpoint);
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

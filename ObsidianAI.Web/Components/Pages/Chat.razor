@@ -427,8 +427,21 @@
                 detail.ModelName);
             UpsertConversationSummary(summary);
             await RefreshConversationListAsync();
-            UpdateConversationRoute(detail.Id);
-            await ScrollToBottom();
+            
+            // Defer navigation and scrolling to after render to avoid lifecycle issues
+            _ = InvokeAsync(async () =>
+            {
+                await Task.Yield(); // Let current render complete
+                try
+                {
+                    UpdateConversationRoute(detail.Id);
+                    await ScrollToBottom();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogDebug(ex, "Failed to update route or scroll after load");
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -1556,8 +1569,20 @@
 
     private async Task ScrollToBottom()
     {
-        await Task.Delay(100); // Small delay to ensure DOM is updated
-        await jsRuntime.InvokeVoidAsync("scrollToBottom");
+        try
+        {
+            await Task.Delay(100); // Small delay to ensure DOM is updated
+            await jsRuntime.InvokeVoidAsync("scrollToBottom");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("prerendering"))
+        {
+            // Ignore errors during prerendering - will be called again after render
+            Logger.LogDebug("ScrollToBottom skipped during prerendering");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to scroll to bottom");
+        }
     }
 
     public async ValueTask DisposeAsync()
