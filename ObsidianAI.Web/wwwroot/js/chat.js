@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Auto-enhance any existing code blocks
     const existingCodeBlocks = document.querySelectorAll('pre code');
     console.log('Found', existingCodeBlocks.length, 'code blocks on page load');
+    if (existingCodeBlocks.length > 0) {
+        window.highlightCode(document);
+    }
     
     // Set up mutation observer to catch dynamically added code blocks
     const observer = new MutationObserver((mutations) => {
