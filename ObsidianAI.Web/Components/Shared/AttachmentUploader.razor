@@ -36,7 +36,7 @@
 
     public async Task TriggerFileSelection()
     {
-        await JSRuntime.InvokeVoidAsync("eval", "document.getElementById('attachment-file-input').click()");
+        await JSRuntime.InvokeVoidAsync("triggerAttachmentFileInputClick");
     }
 
     private async Task UploadAttachment(InputFileChangeEventArgs e)
