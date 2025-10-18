@@ -95,7 +95,7 @@ public class ChatHub : Hub
                     if (data == "[DONE]")
                     {
                         await FlushTokenBufferAsync(force: true);
-                        var finalResponse = TextDecoderService.DecodeSurrogatePairs(fullResponse.ToString());
+                        var finalResponse = TextDecoderService.UnescapeJson(fullResponse.ToString());
 
                         // Log final response with escaped characters
                         var escapedFinal = finalResponse.Replace("\n", "\\n").Replace("\r", "\\r");
@@ -134,7 +134,7 @@ public class ChatHub : Hub
                     }
                     else
                     {
-                        var decodedChunk = TextDecoderService.DecodeSurrogatePairs(data);
+                        var decodedChunk = TextDecoderService.UnescapeJson(data);
                         var fullResponseStr = fullResponse.ToString();
 
                         // Add newline before list items if previous content exists and doesn't end with newline
@@ -169,7 +169,7 @@ public class ChatHub : Hub
                 }
                 else if (!string.IsNullOrWhiteSpace(line))
                 {
-                    var decodedChunk = TextDecoderService.DecodeSurrogatePairs(line);
+                    var decodedChunk = TextDecoderService.UnescapeJson(line);
                     var fullResponseStr = fullResponse.ToString();
 
                     // Add newline before list items if previous content exists
@@ -213,7 +213,7 @@ public class ChatHub : Hub
             if (!completionSent && fullResponse.Length > 0)
             {
                 await FlushTokenBufferAsync(force: true);
-                var finalResponse = TextDecoderService.DecodeSurrogatePairs(fullResponse.ToString());
+                var finalResponse = TextDecoderService.UnescapeJson(fullResponse.ToString());
 
                 // Log final response with escaped characters
                 var escapedFinal = finalResponse.Replace("\n", "\\n").Replace("\r", "\\r");

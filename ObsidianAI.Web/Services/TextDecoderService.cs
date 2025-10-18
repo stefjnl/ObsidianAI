@@ -1,10 +1,93 @@
 using System.Text.RegularExpressions;
+using System.Text;
 
 namespace ObsidianAI.Web.Services;
 
 public static class TextDecoderService
 {
     private static readonly Regex UnicodeRegex = new(@"\\u([0-9A-Fa-f]{4})", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Unescapes JSON-escaped strings including standard escape sequences and Unicode codes.
+    /// </summary>
+    public static string UnescapeJson(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        var result = new StringBuilder(text.Length);
+        var i = 0;
+
+        while (i < text.Length)
+        {
+            if (text[i] == '\\' && i + 1 < text.Length)
+            {
+                var nextChar = text[i + 1];
+                switch (nextChar)
+                {
+                    case 'n':
+                        result.Append('\n');
+                        i += 2;
+                        break;
+                    case 'r':
+                        result.Append('\r');
+                        i += 2;
+                        break;
+                    case 't':
+                        result.Append('\t');
+                        i += 2;
+                        break;
+                    case '"':
+                        result.Append('"');
+                        i += 2;
+                        break;
+                    case '\\':
+                        result.Append('\\');
+                        i += 2;
+                        break;
+                    case '/':
+                        result.Append('/');
+                        i += 2;
+                        break;
+                    case 'b':
+                        result.Append('\b');
+                        i += 2;
+                        break;
+                    case 'f':
+                        result.Append('\f');
+                        i += 2;
+                        break;
+                    case 'u' when i + 5 < text.Length:
+                        // Handle \uXXXX Unicode escape
+                        var hex = text.Substring(i + 2, 4);
+                        if (int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var codePoint))
+                        {
+                            result.Append((char)codePoint);
+                            i += 6;
+                        }
+                        else
+                        {
+                            // Invalid Unicode escape, keep original
+                            result.Append(text[i]);
+                            i++;
+                        }
+                        break;
+                    default:
+                        // Unknown escape sequence, keep both characters
+                        result.Append(text[i]);
+                        i++;
+                        break;
+                }
+            }
+            else
+            {
+                result.Append(text[i]);
+                i++;
+            }
+        }
+
+        return result.ToString();
+    }
 
     public static string DecodeUnicode(string text)
     {
