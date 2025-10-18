@@ -72,7 +72,8 @@ public class ChatService : IChatService
                 Sender = MessageSender.AI,
                 Timestamp = DateTime.UtcNow,
                 FileOperation = apiResponse?.FileOperationResult,
-                IsPending = false
+                IsPending = false,
+                ToolsUsed = new List<string>()
             };
 
             _logger.LogInformation("Received structured response from API");
@@ -91,7 +92,8 @@ public class ChatService : IChatService
                 Content = "Sorry, I encountered an error processing your request. Please try again.",
                 Sender = MessageSender.AI,
                 Timestamp = DateTime.UtcNow,
-                IsPending = false
+                IsPending = false,
+                ToolsUsed = new List<string>()
             };
         }
     }
@@ -526,7 +528,8 @@ public class ChatService : IChatService
             SearchResults = new List<SearchResultData>(),
             IsProcessing = source.IsProcessing,
             ProcessingType = ProcessingType.None,
-            IsPending = false
+            IsPending = false,
+            ToolsUsed = source.ToolsUsed ?? new List<string>()
         };
     }
 
@@ -861,6 +864,7 @@ internal record ConversationMessageApiResponse
     public int? TokenCount { get; init; }
     public ActionCardApiResponse? ActionCard { get; init; }
     public FileOperationApiResponse? FileOperation { get; init; }
+    public List<string>? ToolsUsed { get; init; }
 }
 
 internal record ActionCardApiResponse

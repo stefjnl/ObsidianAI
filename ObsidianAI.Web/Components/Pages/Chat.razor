@@ -5,6 +5,7 @@
 @using ObsidianAI.Web.Services
 @using ObsidianAI.Web.Components.Shared
 @using Microsoft.AspNetCore.SignalR.Client
+@using System.Collections.Generic
 @using System.Text.RegularExpressions
 @using System.Text.Json
 @using Microsoft.Extensions.Logging
@@ -187,9 +188,18 @@
                             var index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
                             if (index >= 0)
                             {
+                                var content = currentAiMessage.Content + $"\n\n🔍 Calling {toolName}...\n\n";
+                                var tools = currentAiMessage.ToolsUsed ?? new List<string>();
+
+                                if (!string.IsNullOrWhiteSpace(toolName) && !tools.Any(t => string.Equals(t, toolName, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    tools = new List<string>(tools) { toolName! };
+                                }
+
                                 currentAiMessage = currentAiMessage with
                                 {
-                                    Content = currentAiMessage.Content + $"\n\n🔍 Calling {toolName}...\n\n"
+                                    Content = content,
+                                    ToolsUsed = tools
                                 };
                                 conversationHistory[index] = currentAiMessage;
                                 StateHasChanged();
@@ -427,7 +437,8 @@
             Content = currentMessage,
             Sender = MessageSender.User,
             Timestamp = DateTime.UtcNow,
-            IsPending = true
+            IsPending = true,
+            ToolsUsed = new List<string>()
         };
 
         conversationHistory.Add(userMessage);
@@ -447,7 +458,8 @@
             Timestamp = DateTime.UtcNow,
             IsProcessing = true,
             ProcessingType = ProcessingType.Thinking,
-            IsPending = true
+            IsPending = true,
+            ToolsUsed = new List<string>()
         };
 
         conversationHistory.Add(currentAiMessage);
@@ -1578,7 +1590,7 @@
                             Destination = actionEl.GetProperty("destination").GetString() ?? string.Empty,
                             Description = actionEl.GetProperty("description").GetString() ?? string.Empty,
                             Operation = actionEl.GetProperty("operation").GetString() ?? string.Empty,
-                            Content = actionEl.TryGetProperty("content", out var contentEl) ? contentEl.GetString() : null
+                            Content = actionEl.TryGetProperty("content", out var contentEl) ? contentEl.GetString() ?? string.Empty : string.Empty
                         };
                         plannedActions.Add(action);
                     }

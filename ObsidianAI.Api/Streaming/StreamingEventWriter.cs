@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics.Metrics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using ObsidianAI.Domain.Models;
@@ -10,6 +11,9 @@ namespace ObsidianAI.Api.Streaming
     /// </summary>
     public static class StreamingEventWriter
     {
+        private static readonly Meter Meter = new("ObsidianAI.Api.Streaming", "1.0.0");
+        private static readonly Counter<long> ToolInvocationCounter = Meter.CreateCounter<long>("mcp.tool.invoked");
+
         /// <summary>
         /// Writes chat stream events as Server-Sent Events to the HTTP response.
         /// </summary>
@@ -34,8 +38,10 @@ namespace ObsidianAI.Api.Streaming
 
                     if (update.Kind == ChatStreamEventKind.ToolCall)
                     {
-                        logger.LogInformation("Sending tool_call event: {ToolName}", update.ToolName);
-                        await context.Response.WriteAsync($"event: tool_call\ndata: {update.ToolName}\n\n", ct);
+                        var toolName = update.ToolName ?? "unknown";
+                        ToolInvocationCounter.Add(1, KeyValuePair.Create<string, object?>("tool", toolName));
+                        logger.LogInformation("Sending tool_call event: {ToolName}", toolName);
+                        await context.Response.WriteAsync($"event: tool_call\ndata: {toolName}\n\n", ct);
                         await context.Response.Body.FlushAsync(ct);
                     }
                     else if (update.Kind == ChatStreamEventKind.ActionCardMetadata && !string.IsNullOrEmpty(update.ActionCardData))

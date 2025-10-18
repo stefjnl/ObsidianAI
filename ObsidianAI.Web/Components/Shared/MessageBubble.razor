@@ -1,4 +1,6 @@
 @using ObsidianAI.Web.Models
+@using System
+@using System.Linq
 
 <div class="message @(Message.Sender == MessageSender.User ? "user" : "")">
     <div class="message-avatar" aria-hidden="true">
@@ -12,6 +14,11 @@
         else
         {
             @Message.Content
+        }
+
+        @if (ShouldShowMicrosoftLearnBadge(Message))
+        {
+            <span class="tool-badge microsoft-learn" title="Microsoft Learn tools powered this response">📚 Microsoft Learn</span>
         }
         
         @if (Message.IsProcessing)
@@ -66,4 +73,10 @@
             _ => "Processing..."
         };
     }
+
+    private static bool ShouldShowMicrosoftLearnBadge(ChatMessage message) =>
+        message.Sender == MessageSender.AI && message.ToolsUsed.Any(IsMicrosoftLearnTool);
+
+    private static bool IsMicrosoftLearnTool(string toolName) =>
+        !string.IsNullOrWhiteSpace(toolName) && toolName.StartsWith("microsoft_", StringComparison.OrdinalIgnoreCase);
 }
