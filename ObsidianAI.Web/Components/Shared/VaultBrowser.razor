@@ -14,7 +14,13 @@
         @if (!string.IsNullOrEmpty(selectedFilePath))
         {
             <!-- File Viewer Panel -->
-            <div class="vault-file-viewer">
+            <div class="vault-file-viewer" style="width: @(FileViewerWidth)px; cursor: @_resizeCursor;"
+                 @onmousedown="StartResize"
+                 @onmouseover="@(() => SetCursor(true))"
+                 @onmouseout="@(() => SetCursor(false))"
+                 @ontouchstart="StartTouchResize"
+                 @ontouchmove="HandleTouchResize"
+                 @ontouchend="EndResize">
                 <FileViewer FilePath="@selectedFilePath"
                            FileContent="@selectedFileContent"
                            IsLoading="@isLoadingFile"
@@ -24,7 +30,12 @@
         }
 
         <!-- File Tree Panel -->
-        <div class="vault-browser-content @(string.IsNullOrEmpty(selectedFilePath) ? "vault-browser-content-full" : "")">
+        <div class="vault-browser-content @(string.IsNullOrEmpty(selectedFilePath) ? "vault-browser-content-full" : "")"
+             @onmouseup="EndResize"
+             @onmousemove="HandleResize"
+             @onmouseleave="EndResize"
+             @ontouchmove="HandleTouchResize"
+             @ontouchend="EndResize">
             @if (IsLoading)
             {
                 <div class="vault-loading">
@@ -82,6 +93,15 @@
     private string? selectedFileContent;
     private bool isLoadingFile;
     private string? fileErrorMessage;
+
+    // Resizing properties
+    private double FileViewerWidth { get; set; } = 300; // Default width in pixels
+    private const double MinFileViewerWidth = 200;
+    private const double MaxFileViewerWidth = 600;
+    private bool _isResizing;
+    private double _startX;
+    private double _startWidth;
+    private string _resizeCursor = "default";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -197,5 +217,65 @@
         selectedFileContent = null;
         fileErrorMessage = null;
         StateHasChanged();
+    }
+
+    private void SetCursor(bool isOverHandle)
+    {
+        _resizeCursor = isOverHandle ? "ew-resize" : "default";
+        StateHasChanged();
+    }
+
+    private void StartResize(MouseEventArgs e)
+    {
+        // Only start resizing if the mouse is near the right edge of the file viewer
+        if (e.OffsetX >= FileViewerWidth - 10)
+        {
+            _isResizing = true;
+            _startX = e.ClientX;
+            _startWidth = FileViewerWidth;
+        }
+    }
+
+    private void StartTouchResize(TouchEventArgs e)
+    {
+        if (e.Touches.Length > 0)
+        {
+            var touch = e.Touches[0];
+            // Only start resizing if the touch is near the right edge
+            if (touch.ClientX >= FileViewerWidth - 10)
+            {
+                _isResizing = true;
+                _startX = touch.ClientX;
+                _startWidth = FileViewerWidth;
+            }
+        }
+    }
+
+    private void HandleResize(MouseEventArgs e)
+    {
+        if (_isResizing)
+        {
+            var deltaX = e.ClientX - _startX;
+            var newWidth = _startWidth + deltaX;
+            FileViewerWidth = Math.Clamp(newWidth, MinFileViewerWidth, MaxFileViewerWidth);
+            StateHasChanged();
+        }
+    }
+
+    private void HandleTouchResize(TouchEventArgs e)
+    {
+        if (_isResizing && e.Touches.Length > 0)
+        {
+            var touch = e.Touches[0];
+            var deltaX = touch.ClientX - _startX;
+            var newWidth = _startWidth + deltaX;
+            FileViewerWidth = Math.Clamp(newWidth, MinFileViewerWidth, MaxFileViewerWidth);
+            StateHasChanged();
+        }
+    }
+
+    private void EndResize()
+    {
+        _isResizing = false;
     }
 }
