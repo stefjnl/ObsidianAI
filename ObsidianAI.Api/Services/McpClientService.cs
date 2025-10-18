@@ -9,63 +9,55 @@ using System.Threading.Tasks;
 namespace ObsidianAI.Api.Services
 {
     /// <summary>
-    /// Service to handle async initialization of McpClient
+    /// Service to handle thread-safe lazy initialization of McpClient.
+    /// Uses Lazy&lt;Task&lt;T&gt;&gt; pattern to ensure exactly one initialization across concurrent access.
     /// </summary>
     public class McpClientService : IHostedService, IMcpClientProvider
     {
-        private readonly SemaphoreSlim _initLock = new(1, 1);
-        private McpClient? _client;
+        private readonly Lazy<Task<McpClient?>> _clientTask;
         private readonly ILogger<McpClientService> _logger;
-        private bool _initialized;
 
         public McpClientService(ILogger<McpClientService> logger)
         {
             _logger = logger;
+            
+            // Lazy<T> with ExecutionAndPublication ensures thread-safe, single initialization
+            // The factory will only execute once, even under concurrent access
+            _clientTask = new Lazy<Task<McpClient?>>(
+                () => CreateClientAsync(CancellationToken.None),
+                LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
-        public async Task<McpClient?> GetClientAsync(CancellationToken cancellationToken = default)
+        public Task<McpClient?> GetClientAsync(CancellationToken cancellationToken = default)
         {
-            if (_initialized)
-            {
-                return _client;
-            }
-
-            await _initLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                if (_initialized)
-                {
-                    return _client;
-                }
-
-                _client = await CreateClientAsync(cancellationToken).ConfigureAwait(false);
-                _initialized = true;
-                return _client;
-            }
-            finally
-            {
-                _initLock.Release();
-            }
+            // Note: cancellationToken cannot be propagated to Lazy initialization
+            // The first caller's initialization completes for all subsequent callers
+            // This is by design - initialization happens once and is shared
+            return _clientTask.Value;
         }
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             try
             {
+                // Eagerly initialize the client during application startup
+                // This allows us to log initialization success/failure early
                 var client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
+                
                 if (client != null)
                 {
                     _logger.LogInformation("MCP client initialized successfully");
                 }
                 else
                 {
-                    _logger.LogWarning("MCP client initialization failed - continuing without MCP functionality");
+                    _logger.LogWarning("MCP client initialization returned null - continuing without MCP functionality");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to initialize MCP client - continuing without MCP functionality");
-                _client = null;
+                // Even if initialization fails during startup, the application continues
+                // Subsequent GetClientAsync calls will return the cached failure (null)
+                _logger.LogError(ex, "Failed to initialize MCP client during startup - continuing without MCP functionality");
             }
         }
 

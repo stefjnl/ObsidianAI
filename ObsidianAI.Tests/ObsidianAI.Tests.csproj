@@ -18,11 +18,13 @@
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
+    <PackageReference Include="NSubstitute" Version="5.1.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ObsidianAI.Infrastructure\ObsidianAI.Infrastructure.csproj" />
     <ProjectReference Include="..\ObsidianAI.Application\ObsidianAI.Application.csproj" />
     <ProjectReference Include="..\ObsidianAI.Domain\ObsidianAI.Domain.csproj" />
+    <ProjectReference Include="..\ObsidianAI.Api\ObsidianAI.Api.csproj" />
   </ItemGroup>
 </Project>

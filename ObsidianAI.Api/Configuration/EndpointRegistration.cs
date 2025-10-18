@@ -38,16 +38,15 @@ public static class EndpointRegistration
         });
 
         app.MapGet("/conversations", async (
-            int? skip,
-            int? take,
+            [AsParameters] ListConversationsRequest request,
             ListConversationsUseCase useCase,
             CancellationToken cancellationToken) =>
         {
             var conversations = await useCase.ExecuteAsync(
                 userId: null,
                 includeArchived: false,
-                skip: Math.Max(0, skip ?? 0),
-                take: Math.Clamp(take ?? 20, 1, 100),
+                skip: request.Skip ?? 0,
+                take: request.Take ?? 20,
                 cancellationToken).ConfigureAwait(false);
 
             var payload = conversations.Select(c => new
@@ -61,7 +60,10 @@ public static class EndpointRegistration
             });
 
             return Results.Ok(payload);
-        });
+        })
+        .WithName("ListConversations")
+        .WithDescription("List all conversations with optional pagination")
+        .WithTags("Conversations");
 
         app.MapGet("/conversations/{id:guid}", async (
             Guid id,
@@ -454,53 +456,77 @@ public static class EndpointRegistration
         });
 
         app.MapGet("/vault/browse", async (
-            string? path,
+            [AsParameters] BrowseVaultRequest request,
             ListVaultContentsUseCase useCase,
             CancellationToken cancellationToken) =>
         {
-            var result = await useCase.ExecuteAsync(path, cancellationToken).ConfigureAwait(false);
-
-            var payload = new
+            try
             {
-                items = result.Items.Select(item => new
-                {
-                    name = item.Name,
-                    path = item.Path,
-                    type = item.Type.ToString(),
-                    extension = item.Extension,
-                    size = item.Size,
-                    lastModified = item.LastModified
-                }),
-                currentPath = result.CurrentPath
-            };
+                var result = await useCase.ExecuteAsync(request.Path, cancellationToken).ConfigureAwait(false);
 
-            return Results.Ok(payload);
-        });
+                var payload = new
+                {
+                    items = result.Items.Select(item => new
+                    {
+                        name = item.Name,
+                        path = item.Path,
+                        type = item.Type.ToString(),
+                        extension = item.Extension,
+                        size = item.Size,
+                        lastModified = item.LastModified
+                    }),
+                    currentPath = result.CurrentPath
+                };
+
+                return Results.Ok(payload);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                return Results.NotFound(new { error = "Directory not found", path = request.Path, detail = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Problem("Access denied", statusCode: 403);
+            }
+            catch (Exception)
+            {
+                return Results.Problem("An error occurred while browsing the vault", statusCode: 500);
+            }
+        })
+        .WithName("BrowseVault")
+        .WithDescription("Browse vault directory contents")
+        .WithTags("Vault");
 
         app.MapGet("/vault/read", async (
-            string path,
+            [AsParameters] ReadFileRequest request,
             ReadFileUseCase useCase,
             CancellationToken cancellationToken) =>
         {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                return Results.BadRequest("File path is required.");
-            }
-
             try
             {
-                var content = await useCase.ExecuteAsync(path, cancellationToken).ConfigureAwait(false);
-                return Results.Ok(new { path, content });
+                var content = await useCase.ExecuteAsync(request.Path, cancellationToken).ConfigureAwait(false);
+                return Results.Ok(new { path = request.Path, content });
+            }
+            catch (FileNotFoundException ex)
+            {
+                return Results.NotFound(new { error = "File not found", path = request.Path, detail = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Problem("Access denied", statusCode: 403);
             }
             catch (InvalidOperationException ex)
             {
-                return Results.Problem(ex.Message, statusCode: 500);
+                return Results.BadRequest(new { error = "Invalid operation", detail = ex.Message });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return Results.Problem($"An error occurred while reading the file: {ex.Message}", statusCode: 500);
+                return Results.Problem("An error occurred while reading the file", statusCode: 500);
             }
-        });
+        })
+        .WithName("ReadFile")
+        .WithDescription("Read content from a file in the vault")
+        .WithTags("Vault");
 
         app.MapPost("/conversations/{id:guid}/attachments", async (
             Guid id,
