@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -19,7 +20,7 @@ public class StartChatUseCase
     private readonly IAIAgentFactory _agentFactory;
     private readonly IAgentThreadProvider _threadProvider;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
-    private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
+    private readonly IMcpToolCatalog? _toolCatalog;
     private readonly IVaultPathResolver _vaultPathResolver;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
@@ -32,7 +33,7 @@ public class StartChatUseCase
         IVaultPathResolver vaultPathResolver,
         IConversationRepository conversationRepository,
         IMessageRepository messageRepository,
-        Application.Services.IMcpClientProvider? mcpClientProvider = null,
+    IMcpToolCatalog toolCatalog,
         ILogger<StartChatUseCase>? logger = null)
     {
         _agentFactory = agentFactory;
@@ -41,7 +42,7 @@ public class StartChatUseCase
         _vaultPathResolver = vaultPathResolver ?? throw new ArgumentNullException(nameof(vaultPathResolver));
         _conversationRepository = conversationRepository;
         _messageRepository = messageRepository;
-        _mcpClientProvider = mcpClientProvider;
+    _toolCatalog = toolCatalog ?? throw new ArgumentNullException(nameof(toolCatalog));
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StartChatUseCase>.Instance;
     }
 
@@ -64,13 +65,18 @@ public class StartChatUseCase
 
         var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
 
-        IEnumerable<object>? tools = null;
-        if (_mcpClientProvider != null)
+        List<object>? tools = null;
+        if (_toolCatalog is not null)
         {
-            var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
-            if (mcpClient != null)
+            var snapshot = await _toolCatalog.GetToolsAsync(ct).ConfigureAwait(false);
+            if (snapshot.Tools.Count > 0)
             {
-                tools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
+                tools = snapshot.Tools.ToList();
+                _logger.LogInformation(
+                    "📦 Loaded {ObsidianCount} Obsidian + {MicrosoftLearnCount} Microsoft Learn tools (expires {ExpiresAt:O})",
+                    snapshot.ObsidianToolCount,
+                    snapshot.MicrosoftLearnToolCount,
+                    snapshot.ExpiresAt);
             }
         }
 
@@ -259,4 +265,5 @@ public class StartChatUseCase
 
         return $"Chat - {DateTime.UtcNow:MMM d, yyyy HH:mm}";
     }
+
 }

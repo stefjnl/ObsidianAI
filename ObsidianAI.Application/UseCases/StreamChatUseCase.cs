@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -22,7 +23,7 @@ public class StreamChatUseCase
     private readonly IAIAgentFactory _agentFactory;
     private readonly IAgentThreadProvider _threadProvider;
     private readonly Domain.Services.IFileOperationExtractor _extractor;
-    private readonly Application.Services.IMcpClientProvider? _mcpClientProvider;
+    private readonly IMcpToolCatalog? _toolCatalog;
     private readonly IVaultPathResolver _vaultPathResolver;
     private readonly IConversationRepository _conversationRepository;
     private readonly IMessageRepository _messageRepository;
@@ -33,10 +34,10 @@ public class StreamChatUseCase
         IAgentThreadProvider threadProvider,
         Domain.Services.IFileOperationExtractor extractor,
         IConversationRepository conversationRepository,
-        IMessageRepository messageRepository,
-        IVaultPathResolver vaultPathResolver,
-        ILogger<StreamChatUseCase>? logger = null,
-        Application.Services.IMcpClientProvider? mcpClientProvider = null)
+    IMessageRepository messageRepository,
+    IVaultPathResolver vaultPathResolver,
+    IMcpToolCatalog toolCatalog,
+    ILogger<StreamChatUseCase>? logger = null)
     {
         _agentFactory = agentFactory;
         _threadProvider = threadProvider ?? throw new ArgumentNullException(nameof(threadProvider));
@@ -45,7 +46,7 @@ public class StreamChatUseCase
         _messageRepository = messageRepository;
         _vaultPathResolver = vaultPathResolver ?? throw new ArgumentNullException(nameof(vaultPathResolver));
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamChatUseCase>.Instance;
-        _mcpClientProvider = mcpClientProvider;
+    _toolCatalog = toolCatalog ?? throw new ArgumentNullException(nameof(toolCatalog));
     }
 
     /// <summary>
@@ -71,27 +72,18 @@ public class StreamChatUseCase
 
         var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
 
-        IEnumerable<object>? tools = null;
-        if (_mcpClientProvider != null)
+        List<object>? tools = null;
+        if (_toolCatalog is not null)
         {
-            var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
-            if (mcpClient != null)
+            var snapshot = await _toolCatalog.GetToolsAsync(ct).ConfigureAwait(false);
+            if (snapshot.Tools.Count > 0)
             {
-                tools = await mcpClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
-
-                _logger.LogWarning(
-                    "📦 MCP returned {ToolCount} tools",
-                    tools?.Count() ?? 0
-                );
-
-                if (tools?.Any() == true)
-                {
-                    var firstTool = tools.First();
-                    _logger.LogWarning(
-                        "📦 First MCP tool type: {ToolType}",
-                        firstTool.GetType().FullName
-                    );
-                }
+                tools = snapshot.Tools.ToList();
+                _logger.LogInformation(
+                    "📦 Loaded {ObsidianCount} Obsidian + {MicrosoftLearnCount} Microsoft Learn tools (expires {ExpiresAt:O})",
+                    snapshot.ObsidianToolCount,
+                    snapshot.MicrosoftLearnToolCount,
+                    snapshot.ExpiresAt);
             }
         }
 
@@ -307,4 +299,5 @@ public class StreamChatUseCase
 
         return trimmed.Substring(0, MaxLength) + "…";
     }
+
 }

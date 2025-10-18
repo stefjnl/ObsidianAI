@@ -1,7 +1,13 @@
 window.scrollToBottom = (element) => {
-    if (element) {
-        element.scrollTop = element.scrollHeight;
+    const target = typeof element === 'string'
+        ? document.querySelector(element)
+        : element || document.querySelector('.chat-area');
+
+    if (!target) {
+        return;
     }
+
+    target.scrollTop = target.scrollHeight;
 };
 
 window.highlightCode = (element) => {

@@ -34,7 +34,9 @@ namespace ObsidianAI.Domain.Models
     /// <param name="ToolName">Optional tool name when <see cref="ChatStreamEventKind.ToolCall"/>.</param>
     /// <param name="Metadata">Optional metadata payload when <see cref="ChatStreamEventKind.Metadata"/>.</param>
     /// <param name="ActionCardData">Optional ActionCard JSON when <see cref="ChatStreamEventKind.ActionCardMetadata"/>.</param>
-    public sealed record ChatStreamEvent(ChatStreamEventKind Kind, string? Text = null, string? ToolName = null, string? Metadata = null, string? ActionCardData = null)
+    /// <param name="ToolPayload">Optional JSON payload describing tool call details.</param>
+    /// <param name="ToolPhase">Optional phase indicator (e.g., "call" or "result") for tool events.</param>
+    public sealed record ChatStreamEvent(ChatStreamEventKind Kind, string? Text = null, string? ToolName = null, string? Metadata = null, string? ActionCardData = null, string? ToolPayload = null, string? ToolPhase = null)
     {
         /// <summary>
         /// Creates a text chunk event.
@@ -47,8 +49,10 @@ namespace ObsidianAI.Domain.Models
         /// Creates a tool call event.
         /// </summary>
         /// <param name="toolName">The name of the tool being invoked.</param>
-        /// <returns>A <see cref="ChatStreamEvent"/> with kind <see cref="ChatStreamEventKind.ToolCall"/>.</returns>
-        public static ChatStreamEvent ToolCall(string toolName) => new(ChatStreamEventKind.ToolCall, ToolName: toolName);
+    /// <param name="payload">Optional JSON payload describing the tool invocation.</param>
+    /// <param name="phase">Optional phase indicator (e.g., "call" or "result").</param>
+    /// <returns>A <see cref="ChatStreamEvent"/> with kind <see cref="ChatStreamEventKind.ToolCall"/>.</returns>
+    public static ChatStreamEvent ToolCall(string toolName, string? payload = null, string? phase = null) => new(ChatStreamEventKind.ToolCall, ToolName: toolName, ToolPayload: payload, ToolPhase: phase);
 
         /// <summary>
         /// Creates a metadata event with a JSON payload.

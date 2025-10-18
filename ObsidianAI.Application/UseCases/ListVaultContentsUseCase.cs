@@ -16,13 +16,17 @@ namespace ObsidianAI.Application.UseCases;
 public sealed class ListVaultContentsUseCase
 {
     private readonly IMcpClientProvider _mcpClientProvider;
+    private readonly IVaultIndexCache _vaultIndexCache;
     private readonly ILogger<ListVaultContentsUseCase> _logger;
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(10);
 
     public ListVaultContentsUseCase(
         IMcpClientProvider mcpClientProvider,
+        IVaultIndexCache vaultIndexCache,
         ILogger<ListVaultContentsUseCase> logger)
     {
         _mcpClientProvider = mcpClientProvider;
+        _vaultIndexCache = vaultIndexCache ?? throw new ArgumentNullException(nameof(vaultIndexCache));
         _logger = logger;
     }
 
@@ -34,17 +38,37 @@ public sealed class ListVaultContentsUseCase
     /// <returns>The vault contents response.</returns>
     public async Task<VaultContentsResponse> ExecuteAsync(string? folderPath, CancellationToken ct = default)
     {
+        var cacheKey = string.IsNullOrWhiteSpace(folderPath) ? VaultIndexCacheKeys.Root : folderPath!;
+        var currentPath = string.IsNullOrWhiteSpace(folderPath) ? "/" : folderPath!;
+        VaultIndexEntry? cachedEntry = null;
+
+        if (_vaultIndexCache.TryGet(cacheKey, out var entry))
+        {
+            cachedEntry = entry;
+            if (entry.Items.Count > 0)
+            {
+                _logger.LogDebug("Serving vault listing for {Path} from cache", currentPath);
+                return new VaultContentsResponse(CloneItems(entry.Items), currentPath);
+            }
+        }
+
         try
         {
             var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
             if (mcpClient == null)
             {
+                if (cachedEntry is not null && cachedEntry.Paths.Count > 0)
+                {
+                    _logger.LogDebug("MCP client unavailable; returning cached vault paths for {Path}.", currentPath);
+                    var fallbackItems = BuildItemsFromCachedPaths(cachedEntry.Paths, folderPath);
+                    return new VaultContentsResponse(fallbackItems, currentPath);
+                }
+
                 _logger.LogWarning("MCP client is not available. Returning empty vault contents.");
-                return new VaultContentsResponse(new List<VaultItemDto>(), folderPath ?? "/");
+                return new VaultContentsResponse(new List<VaultItemDto>(), currentPath);
             }
 
             CallToolResult toolResult;
-            string currentPath;
 
             if (string.IsNullOrWhiteSpace(folderPath))
             {
@@ -54,7 +78,6 @@ public sealed class ListVaultContentsUseCase
                     "obsidian_list_files_in_vault",
                     new Dictionary<string, object?>(),
                     cancellationToken: ct).ConfigureAwait(false);
-                currentPath = "/";
             }
             else
             {
@@ -64,10 +87,10 @@ public sealed class ListVaultContentsUseCase
                     "obsidian_list_files_in_dir",
                     new Dictionary<string, object?> { ["dirpath"] = folderPath },
                     cancellationToken: ct).ConfigureAwait(false);
-                currentPath = folderPath;
             }
 
-            var items = ParseVaultItems(toolResult.Content, folderPath);
+            var contentBlocks = toolResult.Content?.ToList();
+            var items = ParseVaultItems(contentBlocks, folderPath);
             _logger.LogInformation("Retrieved {Count} vault items from {Path}", items.Count, currentPath);
 
             // Debug: Log first few items
@@ -77,13 +100,41 @@ public sealed class ListVaultContentsUseCase
                     item.Name, item.Path, item.Type);
             }
 
+            var rawPaths = VaultToolResponseParser.ExtractPaths(contentBlocks);
+            var storedPaths = rawPaths.Count > 0
+                ? rawPaths
+                : items.Select(i => i.Type == VaultItemType.Folder ? i.Path.TrimEnd('/') + "/" : i.Path).ToList();
+
+            _vaultIndexCache.Set(cacheKey, storedPaths, items, CacheDuration);
+
             return new VaultContentsResponse(items, currentPath);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to list vault contents for path: {FolderPath}", folderPath);
-            return new VaultContentsResponse(new List<VaultItemDto>(), folderPath ?? "/");
+            return new VaultContentsResponse(new List<VaultItemDto>(), currentPath);
         }
+    }
+
+    private static List<VaultItemDto> CloneItems(IReadOnlyList<VaultItemDto> source)
+    {
+        if (source.Count == 0)
+        {
+            return new List<VaultItemDto>();
+        }
+
+        return source.Select(item => item with { }).ToList();
+    }
+
+    private List<VaultItemDto> BuildItemsFromCachedPaths(IReadOnlyList<string> paths, string? parentPath)
+    {
+        if (paths.Count == 0)
+        {
+            return new List<VaultItemDto>();
+        }
+
+        var synthesized = string.Join(Environment.NewLine, paths);
+        return ParseAsLines(synthesized, parentPath);
     }
 
     private List<VaultItemDto> ParseVaultItems(IEnumerable<ContentBlock>? content, string? parentPath)
