@@ -481,16 +481,14 @@ public static class EndpointRegistration
             Guid id,
             HttpRequest request,
             AddAttachmentToConversationUseCase useCase,
-            IAttachmentValidator attachmentValidator,
             CancellationToken cancellationToken) =>
         {
             var form = await request.ReadFormAsync(cancellationToken).ConfigureAwait(false);
             var file = form.Files.GetFile("file");
 
-            var validationResult = attachmentValidator.ValidateFileUpload(request, file);
-            if (!validationResult.IsValid)
+            if (file is null)
             {
-                return Results.BadRequest(validationResult.ErrorMessage);
+                return Results.BadRequest("No file provided.");
             }
 
             var extension = System.IO.Path.GetExtension(file.FileName).ToLowerInvariant();

@@ -36,3 +36,10 @@ window.downloadFile = (fileName, contentType, content) => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 };
+
+window.triggerAttachmentFileInputClick = () => {
+    const fileInput = document.getElementById('attachment-file-input');
+    if (fileInput) {
+        fileInput.click();
+    }
+};
