@@ -57,9 +57,9 @@ namespace ObsidianAI.Web.Streaming
 
         public static string FormatUsageForDisplay(UsageMetrics metrics)
         {
-            static string FormatToken(long? value) => value?.ToString("N0", CultureInfo.InvariantCulture) ?? "n/a";
-
-            return $"Tokens — input: {FormatToken(metrics.InputTokens)}, output: {FormatToken(metrics.OutputTokens)}, total: {FormatToken(metrics.TotalTokens)}";
+            // Delegate formatting to TokenUsageSummary.FormatForDisplay to avoid duplication
+            var summary = new TokenUsageSummary(metrics.InputTokens, metrics.OutputTokens, metrics.TotalTokens);
+            return summary.FormatForDisplay();
         }
 
         private static long? TryGetInt64(JsonElement element, string propertyName)
