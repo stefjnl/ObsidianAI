@@ -13,7 +13,7 @@ public class LlmSettings
     /// <summary>
     /// LMStudio-specific configuration.
     /// </summary>
-    public required LmStudioSettings LMStudio { get; set; }
+    public required LMStudioSettings LMStudio { get; set; }
 
     /// <summary>
     /// OpenRouter-specific configuration.

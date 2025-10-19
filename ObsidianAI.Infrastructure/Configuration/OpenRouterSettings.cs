@@ -1,25 +1,20 @@
 namespace ObsidianAI.Infrastructure.Configuration;
 
-/// <summary>
-/// Configuration settings for OpenRouter provider.
-/// Bound via Options pattern from configuration section: LLM:OpenRouter.
-/// </summary>
 public class OpenRouterSettings
 {
-    /// <summary>
-    /// The endpoint URL for OpenRouter (OpenAI-compatible).
-    /// Example: https://openrouter.ai/api/v1
-    /// </summary>
-    public required string Endpoint { get; set; }
+    public const string SectionName = "AIProviders:OpenRouter";
+    
+    // New architecture properties
+    public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
+    public string DefaultModel { get; set; } = "google/gemini-2.5-flash-lite-preview-09-2025";
+    public int TimeoutSeconds { get; set; } = 30;
+    public int MaxRetries { get; set; } = 3;
 
-    /// <summary>
-    /// The API key used to authenticate requests to OpenRouter.
-    /// </summary>
-    public required string ApiKey { get; set; }
+    // Backward-compatible properties for existing agents/services
+    // Map to new properties to keep a single source of truth
+    public string Endpoint => BaseUrl;
+    public string Model => DefaultModel;
 
-    /// <summary>
-    /// The default model name to use for chat completions.
-    /// Example: google/gemini-2.5-flash-lite-preview-09-2025
-    /// </summary>
-    public required string Model { get; set; }
+    // ApiKey is optionally bound from configuration; user secrets or environment can override
+    public string? ApiKey { get; set; } = string.Empty;
 }

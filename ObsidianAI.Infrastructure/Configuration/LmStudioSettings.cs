@@ -1,25 +1,20 @@
 namespace ObsidianAI.Infrastructure.Configuration;
 
-/// <summary>
-/// Configuration settings for LM Studio provider.
-/// Bound via Options pattern from configuration section: LLM:LMStudio.
-/// </summary>
-public class LmStudioSettings
+public class LMStudioSettings
 {
-    /// <summary>
-    /// The endpoint URL for LMStudio (OpenAI-compatible).
-    /// Example: http://localhost:1234/v1
-    /// </summary>
-    public required string Endpoint { get; set; }
+    public const string SectionName = "AIProviders:LMStudio";
+    
+    // New architecture properties
+    public string BaseUrl { get; set; } = "http://localhost:1234/v1";
+    public string DefaultModel { get; set; } = "local-model";
+    public int TimeoutSeconds { get; set; } = 45;
+    public int MaxRetries { get; set; } = 2;
 
-    /// <summary>
-    /// The API key used to authenticate requests to LMStudio.
-    /// </summary>
-    public required string ApiKey { get; set; }
+    // Backward-compatible properties for existing agents/services
+    // Map to new properties to keep a single source of truth
+    public string Endpoint => BaseUrl;
+    public string Model => DefaultModel;
 
-    /// <summary>
-    /// The default model name to use for chat completions.
-    /// Example: openai/gpt-oss-20b
-    /// </summary>
-    public required string Model { get; set; }
+    // LM Studio often uses a placeholder/local token; keep overridable
+    public string ApiKey { get; set; } = "lm-studio";
 }

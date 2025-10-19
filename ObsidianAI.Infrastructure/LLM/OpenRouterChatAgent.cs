@@ -2,6 +2,7 @@ using ObsidianAI.Domain.Ports;
 using ObsidianAI.Domain.Models;
 using ObsidianAI.Infrastructure.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using OpenAI;
 using System.ClientModel;
 using Microsoft.Extensions.AI;
@@ -27,13 +28,14 @@ namespace ObsidianAI.Infrastructure.LLM
         /// </summary>
         private OpenRouterChatAgent(
             IOptions<AppSettings> appOptions,
+            IConfiguration configuration,
             string instructions,
             System.Collections.Generic.IEnumerable<object>? tools,
             IAgentThreadProvider? threadProvider)
         {
             var settings = appOptions.Value.LLM.OpenRouter;
             var endpoint = settings.Endpoint?.Trim() ?? "https://openrouter.ai/api/v1";
-            var apiKey = settings.ApiKey ?? string.Empty;
+            var apiKey = configuration["OpenRouter:ApiKey"] ?? settings.ApiKey ?? string.Empty;
             var model = settings.Model ?? "google/gemini-2.5-flash-lite-preview-09-2025";
 
             var openAIClient = new OpenAIClient(
@@ -58,12 +60,13 @@ namespace ObsidianAI.Infrastructure.LLM
         /// </summary>
         public static Task<OpenRouterChatAgent> CreateAsync(
             IOptions<AppSettings> appOptions,
+            IConfiguration configuration,
             string instructions,
             System.Collections.Generic.IEnumerable<object>? tools = null,
             IAgentThreadProvider? threadProvider = null,
             CancellationToken ct = default)
         {
-            return Task.FromResult(new OpenRouterChatAgent(appOptions, instructions, tools, threadProvider));
+            return Task.FromResult(new OpenRouterChatAgent(appOptions, configuration, instructions, tools, threadProvider));
         }
 
         /// <inheritdoc />
