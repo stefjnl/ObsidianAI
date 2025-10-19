@@ -16,7 +16,7 @@ public static class DependencyInjection
         // Configuration (Application Layer - Orchestration Settings)
         // ========================================================================
         
-        services.AddOptions<AIProviderOptions>();
+        services.Configure<AIProviderOptions>(configuration.GetSection(AIProviderOptions.SectionName));
 
         // ========================================================================
         // Application Services
