@@ -10,7 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ObsidianAI.Api.Configuration;
+namespace ObsidianAI.Web.Endpoints;
 
 /// <summary>
 /// Endpoints for ActionCard confirmation and execution.
@@ -36,9 +36,6 @@ public static class ActionCardEndpoints
             .Produces(StatusCodes.Status404NotFound);
     }
 
-    /// <summary>
-    /// Confirms and executes a pending ActionCard operation.
-    /// </summary>
     private static async Task<IResult> ConfirmActionCardAsync(
         string reflectionKey,
         IAgentStateService stateService,
@@ -50,7 +47,6 @@ public static class ActionCardEndpoints
         {
             logger.LogInformation("ActionCard confirmation requested for key: {ReflectionKey}", reflectionKey);
 
-            // Retrieve stored operation context
             var storedContext = stateService.Get<object>(reflectionKey);
             if (storedContext == null)
             {
@@ -62,7 +58,6 @@ public static class ActionCardEndpoints
                 });
             }
 
-            // Extract function name and arguments from stored context
             var contextJson = JsonSerializer.Serialize(storedContext);
             var contextDoc = JsonDocument.Parse(contextJson);
             var root = contextDoc.RootElement;
@@ -81,7 +76,6 @@ public static class ActionCardEndpoints
             logger.LogInformation("Executing confirmed operation: {FunctionName} with arguments: {Arguments}", 
                 functionName, JsonSerializer.Serialize(arguments));
 
-            // Get MCP client and execute the tool
             var mcpClient = await mcpClientProvider.GetClientAsync(ct);
             if (mcpClient == null)
             {
@@ -89,10 +83,8 @@ public static class ActionCardEndpoints
                 return Results.Problem("MCP client not available");
             }
 
-            // Call the tool through MCP
             var result = await mcpClient.CallToolAsync(functionName, arguments, cancellationToken: ct);
 
-            // Remove the stored context after successful execution
             stateService.Clear(reflectionKey);
 
             logger.LogInformation("ActionCard operation completed successfully: {FunctionName}", functionName);
@@ -111,9 +103,6 @@ public static class ActionCardEndpoints
         }
     }
 
-    /// <summary>
-    /// Cancels a pending ActionCard operation.
-    /// </summary>
     private static Task<IResult> CancelActionCardAsync(
         string reflectionKey,
         IAgentStateService stateService,
@@ -123,7 +112,6 @@ public static class ActionCardEndpoints
         {
             logger.LogInformation("ActionCard cancellation requested for key: {ReflectionKey}", reflectionKey);
 
-            // Retrieve stored operation context
             var storedContext = stateService.Get<object>(reflectionKey);
             if (storedContext == null)
             {
@@ -135,7 +123,6 @@ public static class ActionCardEndpoints
                 }) as IResult);
             }
 
-            // Extract function name from stored context for logging
             var contextJson = JsonSerializer.Serialize(storedContext);
             var contextDoc = JsonDocument.Parse(contextJson);
             var root = contextDoc.RootElement;
@@ -143,7 +130,6 @@ public static class ActionCardEndpoints
                 ? funcNameElement.GetString() 
                 : "unknown";
 
-            // Remove the stored context
             stateService.Clear(reflectionKey);
 
             logger.LogInformation("ActionCard operation cancelled: {FunctionName}", functionName);
@@ -163,9 +149,6 @@ public static class ActionCardEndpoints
     }
 }
 
-/// <summary>
-/// Response model for ActionCard confirmation.
-/// </summary>
 public record ActionCardConfirmationResponse
 {
     public bool Success { get; init; }
@@ -173,9 +156,6 @@ public record ActionCardConfirmationResponse
     public string? FunctionName { get; init; }
 }
 
-/// <summary>
-/// Response model for ActionCard cancellation.
-/// </summary>
 public record ActionCardCancellationResponse
 {
     public bool Success { get; init; }

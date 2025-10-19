@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ObsidianAI.Application.Services;
 
-namespace ObsidianAI.Api.HealthChecks;
+namespace ObsidianAI.Web.HealthChecks;
 
 /// <summary>
 /// Health check that verifies connectivity with the Microsoft Learn MCP endpoint.

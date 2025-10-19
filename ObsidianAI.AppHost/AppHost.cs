@@ -8,14 +8,11 @@ var mcpGateway = builder.AddExecutable("mcp-gateway", "docker", workingDirectory
     "--servers", "obsidian"
 ]);
 
-// Add API project to orchestration with MCP endpoint configuration
+// Add consolidated Web project to orchestration with MCP endpoint configuration
 // The MCP gateway runs on localhost:8033 and exposes the MCP endpoint at /mcp
-var api = builder.AddProject<Projects.ObsidianAI_Api>("api")
+// Web project now hosts both the Blazor UI and REST API endpoints
+var web = builder.AddProject<Projects.ObsidianAI_Web>("web")
     .WithEnvironment("MCP_ENDPOINT", "http://localhost:8033/mcp")
     .WaitFor(mcpGateway);
-
-// Add Web project to orchestration with reference to API
-var web = builder.AddProject<Projects.ObsidianAI_Web>("web")
-    .WithReference(api);
 
 builder.Build().Run();

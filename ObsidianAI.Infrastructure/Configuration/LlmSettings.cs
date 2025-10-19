@@ -19,4 +19,9 @@ public class LlmSettings
     /// OpenRouter-specific configuration.
     /// </summary>
     public required OpenRouterSettings OpenRouter { get; set; }
+
+    /// <summary>
+    /// NanoGPT-specific configuration.
+    /// </summary>
+    public NanoGptSettings? NanoGPT { get; set; }
 }

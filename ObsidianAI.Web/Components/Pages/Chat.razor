@@ -13,9 +13,11 @@
 @using System.IO
 @using System.Linq
 @inject IChatService ChatService
+@inject IVaultService VaultService
 @inject NavigationManager NavigationManager
 @inject IJSRuntime jsRuntime
 @inject ILogger<Chat> Logger
+@inject IConfiguration Configuration
 @inject HttpClient HttpClient
 
 <ChatHeader Conversation="currentConversationMetadata"
@@ -24,7 +26,8 @@
             OnExport="HandleExportConversationAsync"
             OnVaultClick="OpenVault"
             OnSettingsClick="OpenSettings"
-            OnHistoryClick="ShowHistory" />
+            OnHistoryClick="ShowHistory"
+            CurrentProvider="@llmProvider" />
 
 <PrivacyWarning IsVisible="@(isOpenRouter && !isPrivacyWarningDismissed)" 
                 OnDismiss="DismissPrivacyWarning" />
@@ -306,7 +309,8 @@
 
     private async Task LoadQuickActions()
     {
-        quickActions = await ChatService.GetQuickActionsAsync();
+        var actions = await ChatService.GetQuickActionsAsync();
+        quickActions = actions.ToList();
     }
 
     private async Task FetchLlmProvider()
@@ -1213,7 +1217,8 @@
         try
         {
             var update = new MessageArtifactsUpdate(actionCardUpdate, fileOperationUpdate);
-            await ChatService.UpdateMessageArtifactsAsync(messageId, update);
+            var artifactRequest = new ArtifactUpdateRequest { Artifacts = update };
+            await ChatService.UpdateMessageArtifactsAsync(messageId, artifactRequest);
         }
         catch (Exception ex)
         {

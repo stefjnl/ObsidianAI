@@ -1,53 +1,76 @@
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
+using ObsidianAI.Application.Contracts;
+using ObsidianAI.Application.UseCases;
+using ObsidianAI.Domain.Entities;
+using ObsidianAI.Domain.Models;
+using ObsidianAI.Domain.Ports;
+using ObsidianAI.Infrastructure.Configuration;
+using ObsidianAI.Infrastructure.LLM;
+using ObsidianAI.Web.Endpoints;
 using ObsidianAI.Web.Services;
-using ObsidianAI.Web.Models;
-using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Text;
-using System.Net.Http.Json;
 using System.Text.Json;
 
 namespace ObsidianAI.Web.Hubs;
 
 public class ChatHub : Hub
 {
-    private readonly IChatService _chatService;
+    private readonly StreamChatUseCase _streamChatUseCase;
     private readonly ILogger<ChatHub> _logger;
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IAIAgentFactory _agentFactory;
+    private readonly IConversationRepository _conversationRepository;
+    private readonly IAttachmentRepository _attachmentRepository;
+    private readonly IOptions<AppSettings> _appSettings;
 
-    public ChatHub(IChatService chatService, ILogger<ChatHub> logger, IHttpClientFactory httpClientFactory)
+    public ChatHub(
+        StreamChatUseCase streamChatUseCase,
+        ILogger<ChatHub> logger,
+        IAIAgentFactory agentFactory,
+        IConversationRepository conversationRepository,
+        IAttachmentRepository attachmentRepository,
+        IOptions<AppSettings> appSettings)
     {
-        _chatService = chatService;
+        _streamChatUseCase = streamChatUseCase;
         _logger = logger;
-        _httpClientFactory = httpClientFactory;
+        _agentFactory = agentFactory;
+        _conversationRepository = conversationRepository;
+        _attachmentRepository = attachmentRepository;
+        _appSettings = appSettings;
     }
 
     public async Task StreamMessage(string message, string? conversationId)
     {
-        _logger.LogInformation("Processing streaming message: {Message}", message);
+        _logger.LogInformation("Processing streaming message for conversation: {ConversationId}", conversationId);
 
         try
         {
-            var httpClient = _httpClientFactory.CreateClient("ObsidianAI.Api");
+            var instructions = AgentInstructions.ObsidianAssistant;
 
-            var requestBody = new
+            Guid? conversationGuid = null;
+            string? threadId = null;
+            if (!string.IsNullOrEmpty(conversationId) && Guid.TryParse(conversationId, out var guid))
             {
-                message,
-                conversationId
-            };
+                conversationGuid = guid;
+                var conversation = await _conversationRepository.GetByIdAsync(guid, includeMessages: false, Context.ConnectionAborted);
+                threadId = conversation?.ThreadId;
+            }
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, "/chat/stream")
+            // Fetch attachments if conversation exists
+            var attachments = new List<AttachmentContent>();
+            if (conversationGuid.HasValue)
             {
-                Content = JsonContent.Create(requestBody)
-            };
+                var attachmentEntities = await _attachmentRepository.GetByConversationIdAsync(conversationGuid.Value, Context.ConnectionAborted);
+                attachments = attachmentEntities.Select(a => new AttachmentContent(a.Filename, a.Content, a.FileType)).ToList();
+                if (attachments.Count > 0)
+                {
+                    _logger.LogInformation("Including {Count} attachments in chat context", attachments.Count);
+                }
+            }
 
-            using var response = await httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                Context.ConnectionAborted).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-
-            await using var stream = await response.Content.ReadAsStreamAsync(Context.ConnectionAborted).ConfigureAwait(false);
-            using var reader = new StreamReader(stream);
+            var input = new ChatInput(message, attachments);
+            var persistenceContext = BuildPersistenceContext(conversationGuid, message, threadId);
 
             var fullResponse = new StringBuilder();
             var tokenBuffer = new StringBuilder();
@@ -70,109 +93,38 @@ public class ChatHub : Hub
                 await Clients.Caller.SendAsync("ReceiveToken", payload);
             }
 
-            string? line;
-            string? currentEvent = null;
-            bool completionSent = false;
-            int lineCount = 0;
+            int eventCount = 0;
 
-            while ((line = await reader.ReadLineAsync()) != null)
+            await foreach (var evt in _streamChatUseCase.ExecuteAsync(input, instructions, persistenceContext, Context.ConnectionAborted))
             {
-                lineCount++;
+                eventCount++;
 
-                // Log with escaped characters to see actual structure
-                var escapedLine = line.Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
-                _logger.LogInformation("Line #{LineNum}: '{EscapedLine}'", lineCount,
-                    escapedLine.Length > 100 ? escapedLine.Substring(0, 100) + "..." : escapedLine);
-
-                if (line.StartsWith("event: "))
+                if (evt.Kind == ChatStreamEventKind.ToolCall)
                 {
-                    currentEvent = line.Substring(7).Trim();
+                    var toolName = evt.ToolName ?? "unknown";
+                    var payload = !string.IsNullOrWhiteSpace(evt.ToolPayload)
+                        ? evt.ToolPayload
+                        : JsonSerializer.Serialize(new { name = toolName, phase = evt.ToolPhase ?? "unknown" });
+
+                    _logger.LogInformation("Tool call event: {ToolName} (phase: {Phase})", toolName, evt.ToolPhase ?? "unknown");
+                    await Clients.Caller.SendAsync("StatusUpdate", new { type = "tool_call", tool = payload });
                 }
-                else if (line.StartsWith("data: "))
+                else if (evt.Kind == ChatStreamEventKind.ActionCardMetadata && !string.IsNullOrEmpty(evt.ActionCardData))
                 {
-                    var data = line.Substring(6);
-
-                    if (data == "[DONE]")
-                    {
-                        await FlushTokenBufferAsync(force: true);
-                        var finalResponse = TextDecoderService.UnescapeJson(fullResponse.ToString());
-
-                        // Log final response with escaped characters
-                        var escapedFinal = finalResponse.Replace("\n", "\\n").Replace("\r", "\\r");
-                        _logger.LogWarning("Final accumulated response (Length={Length}): '{EscapedResponse}'",
-                            finalResponse.Length,
-                            escapedFinal.Length > 500 ? escapedFinal.Substring(0, 500) + "..." : escapedFinal);
-
-                        await Clients.Caller.SendAsync("MessageComplete", finalResponse);
-                        completionSent = true;
-                        break;
-                    }
-
-                    if (currentEvent == "tool_call")
-                    {
-                        await Clients.Caller.SendAsync("StatusUpdate", new { type = "tool_call", tool = data });
-                        currentEvent = null;
-                    }
-                    else if (currentEvent == "action_card")
-                    {
-                        _logger.LogInformation("Received action_card event from reflection middleware");
-                        await Clients.Caller.SendAsync("ActionCard", data);
-                        currentEvent = null;
-                    }
-                    else if (currentEvent == "metadata")
-                    {
-                        await Clients.Caller.SendAsync("Metadata", data);
-                        currentEvent = null;
-                    }
-                    else if (currentEvent == "error")
-                    {
-                        await FlushTokenBufferAsync(force: true);
-                        await Clients.Caller.SendAsync("Error", data);
-                        currentEvent = null;
-                        completionSent = true;
-                        break;
-                    }
-                    else
-                    {
-                        var decodedChunk = TextDecoderService.UnescapeJson(data);
-                        var fullResponseStr = fullResponse.ToString();
-
-                        // Add newline before list items if previous content exists and doesn't end with newline
-                        if (fullResponse.Length > 0 &&
-                            !fullResponseStr.EndsWith("\n") &&
-                            decodedChunk.TrimStart().StartsWith("*"))
-                        {
-                            fullResponse.Append("\n\n");
-                            tokenBuffer.Append("\n\n");
-                            await FlushTokenBufferAsync(force: true);
-                        }
-                        // Add newline after list when transitioning to regular text
-                        // Only trigger if we already have a newline (list item ended) and new content isn't a list item
-                        else if (fullResponse.Length > 0 &&
-                                 fullResponseStr.EndsWith("\n") &&
-                                 !fullResponseStr.EndsWith("\n\n") &&
-                                 !decodedChunk.TrimStart().StartsWith("*"))
-                        {
-                            var lastLine = fullResponseStr.Split('\n').Reverse().Skip(1).FirstOrDefault()?.TrimStart() ?? "";
-                            if (lastLine.StartsWith("*"))
-                            {
-                                fullResponse.Append("\n");
-                                tokenBuffer.Append("\n");
-                                await FlushTokenBufferAsync(force: true);
-                            }
-                        }
-
-                        fullResponse.Append(decodedChunk);
-                        tokenBuffer.Append(decodedChunk);
-                        await FlushTokenBufferAsync();
-                    }
+                    _logger.LogInformation("Received action_card event from reflection middleware");
+                    await Clients.Caller.SendAsync("ActionCard", evt.ActionCardData);
                 }
-                else if (!string.IsNullOrWhiteSpace(line))
+                else if (evt.Kind == ChatStreamEventKind.Metadata && !string.IsNullOrEmpty(evt.Metadata))
                 {
-                    var decodedChunk = TextDecoderService.UnescapeJson(line);
+                    _logger.LogInformation("Metadata event: {Payload}", evt.Metadata);
+                    await Clients.Caller.SendAsync("Metadata", evt.Metadata);
+                }
+                else if (evt.Kind == ChatStreamEventKind.Text && !string.IsNullOrEmpty(evt.Text))
+                {
+                    var decodedChunk = TextDecoderService.UnescapeJson(evt.Text);
                     var fullResponseStr = fullResponse.ToString();
 
-                    // Add newline before list items if previous content exists
+                    // Add newline before list items if previous content exists and doesn't end with newline
                     if (fullResponse.Length > 0 &&
                         !fullResponseStr.EndsWith("\n") &&
                         decodedChunk.TrimStart().StartsWith("*"))
@@ -182,7 +134,6 @@ public class ChatHub : Hub
                         await FlushTokenBufferAsync(force: true);
                     }
                     // Add newline after list when transitioning to regular text
-                    // Only trigger if we already have a newline (list item ended) and new content isn't a list item
                     else if (fullResponse.Length > 0 &&
                              fullResponseStr.EndsWith("\n") &&
                              !fullResponseStr.EndsWith("\n\n") &&
@@ -198,38 +149,23 @@ public class ChatHub : Hub
                     }
 
                     fullResponse.Append(decodedChunk);
-                    // Don't append extra newline - it breaks multiline content
-                    // fullResponse.Append("\n");
-
                     tokenBuffer.Append(decodedChunk);
                     await FlushTokenBufferAsync();
                 }
-                else if (string.IsNullOrWhiteSpace(line))
-                {
-                    currentEvent = null;
-                }
             }
 
-            if (!completionSent && fullResponse.Length > 0)
-            {
-                await FlushTokenBufferAsync(force: true);
-                var finalResponse = TextDecoderService.UnescapeJson(fullResponse.ToString());
+            // Flush any remaining tokens and send completion
+            await FlushTokenBufferAsync(force: true);
+            var finalResponse = TextDecoderService.UnescapeJson(fullResponse.ToString());
 
-                // Log final response with escaped characters
-                var escapedFinal = finalResponse.Replace("\n", "\\n").Replace("\r", "\\r");
-                _logger.LogWarning("Final accumulated response (Length={Length}): '{EscapedResponse}'",
-                    finalResponse.Length,
-                    escapedFinal.Length > 500 ? escapedFinal.Substring(0, 500) + "..." : escapedFinal);
+            var escapedFinal = finalResponse.Replace("\n", "\\n").Replace("\r", "\\r");
+            _logger.LogInformation("Final accumulated response (Length={Length}): '{EscapedResponse}'",
+                finalResponse.Length,
+                escapedFinal.Length > 500 ? escapedFinal.Substring(0, 500) + "..." : escapedFinal);
 
-                await Clients.Caller.SendAsync("MessageComplete", finalResponse);
-            }
+            await Clients.Caller.SendAsync("MessageComplete", finalResponse);
 
-            _logger.LogInformation("Message streaming complete (Total lines: {LineCount})", lineCount);
-        }
-        catch (HttpRequestException httpEx)
-        {
-            _logger.LogError(httpEx, "HTTP error processing streaming message");
-            await Clients.Caller.SendAsync("Error", "Unable to connect to the AI service.");
+            _logger.LogInformation("Message streaming complete ({EventCount} events)", eventCount);
         }
         catch (TaskCanceledException)
         {
@@ -240,6 +176,29 @@ public class ChatHub : Hub
             _logger.LogError(ex, "Unexpected error processing streaming message");
             await Clients.Caller.SendAsync("Error", "An unexpected error occurred while processing your message.");
         }
+    }
+
+    private ConversationPersistenceContext BuildPersistenceContext(Guid? conversationId, string message, string? threadId)
+    {
+        var provider = ParseProvider(_appSettings.Value.LLM.Provider);
+        var modelName = _agentFactory.GetModelName();
+        return new ConversationPersistenceContext(conversationId, null, provider, modelName, message, threadId);
+    }
+
+    private static ConversationProvider ParseProvider(string provider)
+    {
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            return ConversationProvider.Unknown;
+        }
+
+        return provider.Trim().ToLowerInvariant() switch
+        {
+            "lmstudio" => ConversationProvider.LmStudio,
+            "openrouter" => ConversationProvider.OpenRouter,
+            "nanogpt" => ConversationProvider.NanoGPT,
+            _ => ConversationProvider.Unknown
+        };
     }
 
     public override async Task OnConnectedAsync()
