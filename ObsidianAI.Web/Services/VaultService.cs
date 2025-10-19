@@ -12,6 +12,7 @@ public class VaultService : IVaultService
 
     public VaultService(HttpClient httpClient)
     {
+        ArgumentNullException.ThrowIfNull(httpClient);
         _httpClient = httpClient;
     }
 
