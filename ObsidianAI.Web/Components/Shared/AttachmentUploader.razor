@@ -89,8 +89,7 @@
     {
         if (!ConversationId.HasValue) return;
 
-        var httpClient = HttpClientFactory.CreateClient();
-        httpClient.BaseAddress = new Uri("http://localhost:5244");
+        var httpClient = HttpClientFactory.CreateClient("ObsidianAI.Api");
 
         try
         {
