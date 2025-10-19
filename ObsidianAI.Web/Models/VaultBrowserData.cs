@@ -33,3 +33,8 @@ public enum VaultItemType
     File,
     Folder
 }
+
+/// <summary>
+/// Response model for vault browsing operations (alias for VaultContentsData)
+/// </summary>
+public record VaultBrowserResponse : VaultContentsData;

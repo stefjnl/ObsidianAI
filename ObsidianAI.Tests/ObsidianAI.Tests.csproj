@@ -25,6 +25,6 @@
     <ProjectReference Include="..\ObsidianAI.Infrastructure\ObsidianAI.Infrastructure.csproj" />
     <ProjectReference Include="..\ObsidianAI.Application\ObsidianAI.Application.csproj" />
     <ProjectReference Include="..\ObsidianAI.Domain\ObsidianAI.Domain.csproj" />
-    <ProjectReference Include="..\ObsidianAI.Api\ObsidianAI.Api.csproj" />
+    <ProjectReference Include="..\ObsidianAI.Web\ObsidianAI.Web.csproj" />
   </ItemGroup>
 </Project>

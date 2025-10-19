@@ -6,22 +6,21 @@ using System.Text.Json;
 using System.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using ObsidianAI.Api.Models;
-using ObsidianAI.Api.Streaming;
 using ObsidianAI.Application.Contracts;
 using ObsidianAI.Application.UseCases;
 using ObsidianAI.Domain.Entities;
 using ObsidianAI.Domain.Models;
 using ObsidianAI.Domain.Ports;
 using ObsidianAI.Infrastructure.Configuration;
-using ObsidianAI.Infrastructure.LLM;
+using ObsidianAI.Web.Streaming;
 
-namespace ObsidianAI.Api.Configuration;
+namespace ObsidianAI.Web.Endpoints;
 
 /// <summary>
-/// Endpoint registration helpers for the ObsidianAI API application.
+/// Endpoint registration helpers for the ObsidianAI application.
 /// </summary>
 public static class EndpointRegistration
 {
@@ -132,12 +131,12 @@ public static class EndpointRegistration
         app.MapPost("/conversations", async (
             CreateConversationRequest request,
             CreateConversationUseCase useCase,
-            ILlmClientFactory llmClientFactory,
+            IAIAgentFactory agentFactory,
             IOptions<AppSettings> appSettings,
             CancellationToken cancellationToken) =>
         {
             var provider = ParseProvider(appSettings.Value.LLM.Provider);
-            var modelName = llmClientFactory.GetModelName();
+            var modelName = agentFactory.GetModelName();
             var conversationId = await useCase.ExecuteAsync(
                 request.UserId,
                 string.IsNullOrWhiteSpace(request.Title) ? "New Conversation" : request.Title,
@@ -371,7 +370,7 @@ public static class EndpointRegistration
         app.MapPost("/chat", async (
             ChatRequest request,
             StartChatUseCase useCase,
-            ILlmClientFactory llmClientFactory,
+            IAIAgentFactory agentFactory,
             IConversationRepository conversationRepository,
             IOptions<AppSettings> appSettings,
             CancellationToken cancellationToken) =>
@@ -386,7 +385,7 @@ public static class EndpointRegistration
             }
 
             var input = new ChatInput(request.Message);
-            var context = BuildPersistenceContext(request, null, appSettings.Value, llmClientFactory.GetModelName(), threadId);
+            var context = BuildPersistenceContext(request, null, appSettings.Value, agentFactory.GetModelName(), threadId);
             var result = await useCase.ExecuteAsync(input, instructions, context, cancellationToken).ConfigureAwait(false);
 
             return Results.Ok(new
@@ -403,7 +402,7 @@ public static class EndpointRegistration
             ChatRequest request,
             HttpContext context,
             StreamChatUseCase useCase,
-            ILlmClientFactory llmClientFactory,
+            IAIAgentFactory agentFactory,
             IConversationRepository conversationRepository,
             IAttachmentRepository attachmentRepository,
             IOptions<AppSettings> appSettings,
@@ -434,7 +433,7 @@ public static class EndpointRegistration
             }
 
             var input = new ChatInput(request.Message, attachments);
-            var persistenceContext = BuildPersistenceContext(request, null, appSettings.Value, llmClientFactory.GetModelName(), threadId);
+            var persistenceContext = BuildPersistenceContext(request, null, appSettings.Value, agentFactory.GetModelName(), threadId);
             var stream = useCase.ExecuteAsync(input, instructions, persistenceContext, context.RequestAborted);
 
             await StreamingEventWriter.WriteAsync(context, stream, logger, context.RequestAborted).ConfigureAwait(false);
@@ -444,7 +443,7 @@ public static class EndpointRegistration
         {
             var result = await useCase.ExecuteAsync(request.Query, cancellationToken).ConfigureAwait(false);
             var apiResults = result.Results.Select(r => new SearchResult(r.Path, (float)r.Score, r.Preview)).ToList();
-            return Results.Ok(new ObsidianAI.Api.Models.SearchResponse(apiResults));
+            return Results.Ok(new SearchResponse(apiResults));
         });
 
         app.MapPost("/vault/reorganize", (ReorganizeRequest request) => Results.Ok(new ReorganizeResponse("Completed", 10)));
@@ -593,6 +592,7 @@ public static class EndpointRegistration
         {
             "lmstudio" => ConversationProvider.LmStudio,
             "openrouter" => ConversationProvider.OpenRouter,
+            "nanogpt" => ConversationProvider.NanoGPT,
             _ => ConversationProvider.Unknown
         };
     }

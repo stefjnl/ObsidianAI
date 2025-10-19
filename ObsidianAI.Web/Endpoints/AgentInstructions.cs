@@ -1,7 +1,7 @@
-namespace ObsidianAI.Api.Configuration;
+namespace ObsidianAI.Web.Endpoints;
 
 /// <summary>
-/// Centralized repository for agent instruction prompts used by the API endpoints.
+/// Centralized repository for agent instruction prompts.
 /// </summary>
 public static class AgentInstructions
 {

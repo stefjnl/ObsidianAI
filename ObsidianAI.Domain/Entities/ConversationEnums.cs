@@ -7,7 +7,8 @@ public enum ConversationProvider
 {
     Unknown = 0,
     LmStudio = 1,
-    OpenRouter = 2
+    OpenRouter = 2,
+    NanoGPT = 3
 }
 
 /// <summary>

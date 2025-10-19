@@ -1,6 +1,0 @@
-@ObsidianAI.Api_HostAddress = http://localhost:5095
-
-GET {{ObsidianAI.Api_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

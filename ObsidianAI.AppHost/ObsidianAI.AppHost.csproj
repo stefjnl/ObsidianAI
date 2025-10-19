@@ -17,7 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ObsidianAI.Api\ObsidianAI.Api.csproj" />
     <ProjectReference Include="..\ObsidianAI.Web\ObsidianAI.Web.csproj" />
   </ItemGroup>
 

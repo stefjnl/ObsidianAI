@@ -6,7 +6,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ObsidianAI.Api.Services
+namespace ObsidianAI.Web.Services
 {
     /// <summary>
     /// Service to handle thread-safe lazy initialization of McpClient.
@@ -20,7 +20,7 @@ namespace ObsidianAI.Api.Services
         public McpClientService(ILogger<McpClientService> logger)
         {
             _logger = logger;
-            
+
             // Lazy<T> with ExecutionAndPublication ensures thread-safe, single initialization
             // The factory will only execute once, even under concurrent access
             _clientTask = new Lazy<Task<McpClient?>>(
@@ -43,7 +43,7 @@ namespace ObsidianAI.Api.Services
                 // Eagerly initialize the client during application startup
                 // This allows us to log initialization success/failure early
                 var client = await GetClientAsync(cancellationToken).ConfigureAwait(false);
-                
+
                 if (client != null)
                 {
                     _logger.LogInformation("MCP client initialized successfully");

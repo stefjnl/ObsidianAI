@@ -5,14 +5,14 @@ using Microsoft.Extensions.Logging;
 using ObsidianAI.Domain.Models;
 using System.Text.Json;
 
-namespace ObsidianAI.Api.Streaming
+namespace ObsidianAI.Web.Streaming
 {
     /// <summary>
     /// Provides centralized logic for writing Server-Sent Events (SSE) for chat streaming.
     /// </summary>
     public static class StreamingEventWriter
     {
-        private static readonly Meter Meter = new("ObsidianAI.Api.Streaming", "1.0.0");
+        private static readonly Meter Meter = new("ObsidianAI.Web.Streaming", "1.0.0");
         private static readonly Counter<long> ToolInvocationCounter = Meter.CreateCounter<long>("mcp.tool.invoked");
         private static readonly JsonSerializerOptions ToolPayloadSerializerOptions = new(JsonSerializerDefaults.Web)
         {

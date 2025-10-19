@@ -31,6 +31,7 @@ The API requires LLM provider credentials based on which provider you're using:
 |------------|--------------|---------------|-------------|
 | `LLM:OpenRouter:ApiKey` | OpenRouter | `sk-or-v1-xxxx...` | OpenRouter API key for AI model access |
 | `LLM:LMStudio:ApiKey` | LM Studio | `lm-studio` | LM Studio API key (can be any value for local) |
+| `LLM:NanoGPT:ApiKey` | NanoGPT | `ngpt-xxxx...` | NanoGPT API key for AI model access |
 
 **User Secrets ID:** `obsidianai-api-secrets`
 
@@ -97,11 +98,22 @@ dotnet user-secrets set "LLM:LMStudio:ApiKey" "lm-studio" --project ObsidianAI.A
 dotnet user-secrets set "LLM:LMStudio:ApiKey" "lm-studio" --project ObsidianAI.AppHost
 ```
 
-**Prerequisites for LM Studio:**
-1. Download and install LM Studio from [https://lmstudio.ai](https://lmstudio.ai)
-2. Download a compatible model (e.g., `openai/gpt-oss-20b`)
-3. Start the local server on port 1234
-4. Verify endpoint is accessible at `http://localhost:1234/v1`
+#### For NanoGPT
+
+```powershell
+# API project
+dotnet user-secrets set "LLM:NanoGPT:ApiKey" "your-nanogpt-api-key-here" --project ObsidianAI.Api
+
+# AppHost project (needed for Aspire orchestration)
+dotnet user-secrets set "LLM:NanoGPT:ApiKey" "your-nanogpt-api-key-here" --project ObsidianAI.AppHost
+```
+
+**Getting a NanoGPT API Key:**
+1. Go to [https://docs.nano-gpt.com](https://docs.nano-gpt.com)
+2. Sign up for an account
+3. Navigate to API Keys section
+4. Generate a new API key
+5. Copy the key
 
 ### Step 3: Verify Configuration
 
@@ -127,14 +139,14 @@ Update `appsettings.json` or use environment variable:
 ```json
 {
   "LLM": {
-    "Provider": "OpenRouter"  // or "LMStudio"
+    "Provider": "OpenRouter"  // or "LMStudio" or "NanoGPT"
   }
 }
 ```
 
 Or via environment variable:
 ```powershell
-$env:LLM__Provider = "OpenRouter"
+$env:LLM__Provider = "OpenRouter"  # or "LMStudio" or "NanoGPT"
 ```
 
 ---
@@ -471,7 +483,7 @@ Expected response:
 **Solution:**
 Update `appsettings.json` or set environment variable:
 ```powershell
-$env:LLM__Provider = "OpenRouter"  # or "LMStudio"
+$env:LLM__Provider = "OpenRouter"  # or "LMStudio" or "NanoGPT"
 ```
 
 ### Issue: User secrets not found

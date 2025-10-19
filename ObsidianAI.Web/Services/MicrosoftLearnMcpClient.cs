@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ObsidianAI.Application.Services;
 
-namespace ObsidianAI.Api.Services;
+namespace ObsidianAI.Web.Services;
 
 public sealed class MicrosoftLearnMcpClient : IMicrosoftLearnMcpClientProvider
 {
