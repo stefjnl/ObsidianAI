@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Configuration;
 using ObsidianAI.Domain.Ports;
 using ObsidianAI.Infrastructure.Configuration;
 using ObsidianAI.Infrastructure.Middleware;
@@ -12,7 +12,7 @@ using System.Threading;
 namespace ObsidianAI.Infrastructure.LLM;
 
 /// <summary>
-/// Provider-agnostic factory that creates IChatAgent instances based on AppSettings.LLM.Provider.
+/// Provider-agnostic factory that creates IChatAgent instances based on the runtime provider selection.
 /// </summary>
 public class ConfiguredAIAgentFactory : IAIAgentFactory
 {
@@ -20,6 +20,7 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
     private readonly IConfiguration _configuration;
     private readonly IReadOnlyList<IFunctionMiddleware> _middlewares;
     private readonly ILogger<ConfiguredAIAgentFactory> _logger;
+    private readonly ILlmProviderRuntimeStore _runtimeStore;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ConfiguredAIAgentFactory"/> class.
@@ -32,29 +33,31 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
         IOptions<AppSettings> options,
         IConfiguration configuration,
         IEnumerable<IFunctionMiddleware> middlewares,
-        ILogger<ConfiguredAIAgentFactory> logger)
+        ILogger<ConfiguredAIAgentFactory> logger,
+        ILlmProviderRuntimeStore runtimeStore)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _middlewares = middlewares?.ToList() ?? [];
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _runtimeStore = runtimeStore ?? throw new ArgumentNullException(nameof(runtimeStore));
 
-        _logger.LogWarning(
-            "🔧 Factory initialized with {MiddlewareCount} middlewares: {MiddlewareTypes}",
-            _middlewares.Count,
-            string.Join(", ", _middlewares.Select(m => m.GetType().Name))
-        );
+        if (_middlewares.Count > 0)
+        {
+            _logger.LogInformation(
+                "Factory initialized with {MiddlewareCount} tool middlewares: {MiddlewareTypes}",
+                _middlewares.Count,
+                string.Join(", ", _middlewares.Select(m => m.GetType().Name)));
+        }
     }
 
     /// <inheritdoc />
-    public string ProviderName => _options.Value.LLM.Provider?.Trim() ?? "LMStudio";
+    public string ProviderName => _runtimeStore.CurrentProvider;
 
     /// <inheritdoc />
     public string GetModelName()
     {
-        return ProviderName.Equals("LMStudio", StringComparison.OrdinalIgnoreCase)
-            ? _options.Value.LLM.LMStudio.Model
-            : _options.Value.LLM.OpenRouter.Model;
+        return _runtimeStore.CurrentModel;
     }
 
     /// <inheritdoc />
@@ -64,65 +67,24 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
         IAgentThreadProvider? threadProvider = null,
         CancellationToken cancellationToken = default)
     {
-        // LOG: What did we receive?
-        Console.WriteLine($"[FACTORY] 📦 CreateAgentAsync received {tools?.Count() ?? 0} tools");
-        _logger.LogWarning(
-            "📦 CreateAgentAsync received {ToolCount} tools",
-            tools?.Count() ?? 0
-        );
-
-        if (tools?.Any() == true)
-        {
-            var firstTool = tools.First();
-            Console.WriteLine($"[FACTORY] 📦 First tool type: {firstTool.GetType().FullName}");
-            _logger.LogWarning(
-                "📦 First tool type: {ToolType}",
-                firstTool.GetType().FullName
-            );
-        }
-
-        // LOG: How many are AIFunction?
-        var aiFunctions = tools?.OfType<AIFunction>().ToList() ?? [];
-        Console.WriteLine($"[FACTORY] 📦 Filtered to {aiFunctions.Count} AIFunction objects");
-        _logger.LogWarning(
-            "📦 Filtered to {AIFunctionCount} AIFunction objects",
-            aiFunctions.Count
-        );
-
-        Console.WriteLine($"[FACTORY] 🔄 About to wrap with {_middlewares.Count} middlewares");
-        Console.WriteLine($"[FACTORY] 🔄 Condition check: tools={tools is not null}, middlewares={_middlewares.Count > 0}");
-
         // Wrap tools with middleware if provided
         var wrappedTools = tools is not null && _middlewares.Count > 0
             ? tools.OfType<AIFunction>()
                    .WithMiddleware(_middlewares.ToArray())
                    .Cast<object>()
             : tools;
+        var provider = ProviderName;
+        _logger.LogDebug("Creating chat agent for provider {Provider} with {ToolCount} tools", provider, wrappedTools?.Count() ?? 0);
 
-        // LOG: What happened during wrapping?
-        var wrappedCount = (wrappedTools as IEnumerable<object>)?.Count() ?? 0;
-        Console.WriteLine($"[FACTORY] 🔄 Wrapping result: Input={tools?.Count() ?? 0}, Middlewares={_middlewares.Count}, Output={wrappedCount}");
-        _logger.LogWarning(
-            "🔄 Wrapping result: Input={InputCount}, Middlewares={MiddlewareCount}, Output={OutputCount}",
-            tools?.Count() ?? 0,
-            _middlewares.Count,
-            wrappedCount
-        );
-
-        if (wrappedTools is IEnumerable<object> wrapped && wrapped.Any())
+        return provider switch
         {
-            var firstWrapped = wrapped.First();
-            Console.WriteLine($"[FACTORY] 🔄 First wrapped tool type: {firstWrapped.GetType().FullName}");
-            _logger.LogWarning(
-                "🔄 First wrapped tool type: {WrappedType}",
-                firstWrapped.GetType().FullName
-            );
-        }
-
-        return ProviderName.Equals("LMStudio", StringComparison.OrdinalIgnoreCase)
-            ? await LmStudioChatAgent.CreateAsync(_options, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false)
-            : ProviderName.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase)
-                ? await OpenRouterChatAgent.CreateAsync(_options, _configuration, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false)
-                : await LmStudioChatAgent.CreateAsync(_options, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false);
+            var name when name.Equals("LMStudio", StringComparison.OrdinalIgnoreCase)
+                => await LmStudioChatAgent.CreateAsync(_options, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false),
+            var name when name.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase)
+                => await OpenRouterChatAgent.CreateAsync(_options, _configuration, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false),
+            var name when name.Equals("NanoGPT", StringComparison.OrdinalIgnoreCase)
+                => await NanoGptChatAgent.CreateAsync(_options, _configuration, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false),
+            _ => throw new InvalidOperationException($"Unsupported LLM provider '{provider}'.")
+        };
     }
 }

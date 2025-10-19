@@ -86,6 +86,9 @@
     [Parameter]
     public string CurrentProvider { get; set; } = "OpenRouter";
 
+    [Parameter]
+    public EventCallback<string> OnProviderChanged { get; set; }
+
     private bool isEditingTitle;
     private string editableTitle = string.Empty;
     private string selectedProvider = "OpenRouter";
@@ -98,16 +101,12 @@
             if (selectedProvider != value)
             {
                 selectedProvider = value;
-                OnProviderChanged();
+                if (OnProviderChanged.HasDelegate)
+                {
+                    _ = OnProviderChanged.InvokeAsync(value);
+                }
             }
         }
-    }
-
-    private void OnProviderChanged()
-    {
-        // For now, just show a message that restart is required
-        // In the future, this could trigger a dynamic provider switch
-        Console.WriteLine($"Provider changed to: {selectedProvider}. Application restart required.");
     }
 
     protected override void OnParametersSet()
@@ -117,8 +116,11 @@
             editableTitle = Conversation.Title;
         }
         
-        // Initialize selected provider from parameter
-        selectedProvider = CurrentProvider;
+        // Initialize selected provider from parameter when it changes
+        if (!string.Equals(selectedProvider, CurrentProvider, StringComparison.OrdinalIgnoreCase))
+        {
+            selectedProvider = CurrentProvider;
+        }
     }
 
     private void ToggleTitleEdit()

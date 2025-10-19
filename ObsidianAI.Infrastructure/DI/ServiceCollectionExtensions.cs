@@ -35,6 +35,8 @@ public static class ServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("ObsidianAI") ?? "Data Source=obsidianai.db";
         services.AddDbContext<ObsidianAIDbContext>(options => options.UseSqlite(connectionString));
 
+        services.AddSingleton<ILlmProviderRuntimeStore, LlmProviderRuntimeStore>();
+
         services.AddScoped<IConversationRepository, ConversationRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
         services.AddScoped<IAttachmentRepository, AttachmentRepository>();
@@ -57,7 +59,8 @@ public static class ServiceCollectionExtensions
             var configuration = sp.GetRequiredService<IConfiguration>();
             var middlewares = sp.GetServices<IFunctionMiddleware>();
             var logger = sp.GetRequiredService<ILogger<ConfiguredAIAgentFactory>>();
-            return new ConfiguredAIAgentFactory(options, configuration, middlewares, logger);
+            var runtimeStore = sp.GetRequiredService<ILlmProviderRuntimeStore>();
+            return new ConfiguredAIAgentFactory(options, configuration, middlewares, logger, runtimeStore);
         });
 
         services.AddSingleton<IAgentThreadProvider, InMemoryAgentThreadProvider>();

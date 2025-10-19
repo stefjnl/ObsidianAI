@@ -8,6 +8,7 @@
 @using System.Collections.Generic
 @using System.Text.RegularExpressions
 @using System.Text.Json
+@using System.Threading
 @using Microsoft.Extensions.Logging
 @using Microsoft.AspNetCore.WebUtilities
 @using System.IO
@@ -27,7 +28,16 @@
             OnVaultClick="OpenVault"
             OnSettingsClick="OpenSettings"
             OnHistoryClick="ShowHistory"
-            CurrentProvider="@llmProvider" />
+            CurrentProvider="@llmProvider"
+            OnProviderChanged="HandleProviderChangedAsync" />
+
+@if (!string.IsNullOrEmpty(providerStatusMessage))
+{
+    <div class="provider-toast @(providerStatusIsError ? "provider-toast--error" : "provider-toast--success")"
+         role="status" aria-live="polite">
+        @providerStatusMessage
+    </div>
+}
 
 <PrivacyWarning IsVisible="@(isOpenRouter && !isPrivacyWarningDismissed)" 
                 OnDismiss="DismissPrivacyWarning" />
@@ -89,6 +99,9 @@
     private string? pendingUserMessageClientId;
     private string? pendingAssistantMessageClientId;
     private AttachmentUploader? attachmentUploader;
+    private string? providerStatusMessage;
+    private bool providerStatusIsError;
+    private CancellationTokenSource? providerStatusCts;
     private static readonly Regex FileOpPattern1 = new(
         @"(?i)(append|create|write|modify|patch|delete)\s+to\s+file:\s*[`""']?([^`""'\n]+\.md)[`""']?\s+with\s+content:\s*[""']([^""'\n]+)[""']",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.NonBacktracking,
@@ -319,6 +332,59 @@
         llmProvider = provider;
         isOpenRouter = string.Equals(provider, "OpenRouter", StringComparison.OrdinalIgnoreCase);
         StateHasChanged();
+    }
+
+    private async Task HandleProviderChangedAsync(string provider)
+    {
+        providerStatusCts?.Cancel();
+        providerStatusCts?.Dispose();
+        providerStatusCts = null;
+
+        try
+        {
+            var result = await ChatService.SwitchLlmProviderAsync(provider);
+            llmProvider = result.ActiveProvider;
+            isOpenRouter = string.Equals(result.ActiveProvider, "OpenRouter", StringComparison.OrdinalIgnoreCase);
+
+            providerStatusIsError = !result.Success;
+            providerStatusMessage = result.Success
+                ? $"Switched to {result.ActiveProvider} ({result.ActiveModel}). New requests will use this provider."
+                : result.ErrorMessage ?? $"Failed to switch provider to {provider}.";
+
+            await InvokeAsync(StateHasChanged);
+
+            if (!string.IsNullOrEmpty(providerStatusMessage))
+            {
+                providerStatusCts = new CancellationTokenSource();
+                _ = DismissProviderStatusMessageAsync(providerStatusCts.Token);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to switch LLM provider to {Provider}", provider);
+            providerStatusIsError = true;
+            providerStatusMessage = "Failed to switch provider. Check server logs for details.";
+            await InvokeAsync(StateHasChanged);
+
+            providerStatusCts = new CancellationTokenSource();
+            _ = DismissProviderStatusMessageAsync(providerStatusCts.Token);
+        }
+    }
+
+    private async Task DismissProviderStatusMessageAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(6), token);
+            providerStatusMessage = null;
+            providerStatusCts?.Dispose();
+            providerStatusCts = null;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (TaskCanceledException)
+        {
+            // Expected when a new provider change occurs before timeout.
+        }
     }
 
     private async Task EnsureConversationInitializedAsync()
@@ -1619,6 +1685,10 @@
 
     public async ValueTask DisposeAsync()
     {
+        providerStatusCts?.Cancel();
+        providerStatusCts?.Dispose();
+        providerStatusCts = null;
+
         if (hubConnection != null)
         {
             await hubConnection.DisposeAsync();

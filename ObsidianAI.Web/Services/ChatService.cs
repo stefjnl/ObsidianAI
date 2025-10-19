@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using ObsidianAI.Domain.Ports;
 using ObsidianAI.Web.Models;
 
 namespace ObsidianAI.Web.Services;
@@ -10,12 +11,12 @@ namespace ObsidianAI.Web.Services;
 public class ChatService : IChatService
 {
     private readonly HttpClient _httpClient;
-    private readonly IConfiguration _configuration;
+    private readonly ILlmProviderRuntimeStore _runtimeStore;
 
-    public ChatService(HttpClient httpClient, IConfiguration configuration)
+    public ChatService(HttpClient httpClient, ILlmProviderRuntimeStore runtimeStore)
     {
         _httpClient = httpClient;
-        _configuration = configuration;
+        _runtimeStore = runtimeStore;
     }
 
     public Task<IEnumerable<QuickAction>> GetQuickActionsAsync()
@@ -30,10 +31,24 @@ public class ChatService : IChatService
         return Task.FromResult<IEnumerable<QuickAction>>(actions);
     }
 
-    public Task<string> GetLlmProviderAsync()
+    public Task<string> GetLlmProviderAsync() => Task.FromResult(_runtimeStore.CurrentProvider);
+
+    public Task<ProviderSwitchResult> SwitchLlmProviderAsync(string providerName)
     {
-        var provider = _configuration["LLM:Provider"] ?? "Unknown";
-        return Task.FromResult(provider);
+        if (string.IsNullOrWhiteSpace(providerName))
+        {
+            var failure = new ProviderSwitchResult(false, _runtimeStore.CurrentProvider, _runtimeStore.CurrentModel, "Provider name is required.");
+            return Task.FromResult(failure);
+        }
+
+        if (_runtimeStore.TrySwitchProvider(providerName, out var model, out var error))
+        {
+            var success = new ProviderSwitchResult(true, _runtimeStore.CurrentProvider, model, null);
+            return Task.FromResult(success);
+        }
+
+        var result = new ProviderSwitchResult(false, _runtimeStore.CurrentProvider, _runtimeStore.CurrentModel, error ?? "Failed to switch provider.");
+        return Task.FromResult(result);
     }
 
     public async Task<Guid> CreateConversationAsync()

@@ -20,4 +20,5 @@ public interface IChatService
     Task<ReorganizeResponse> ReorganizeAsync(ReorganizeRequest request);
     Task UpdateMessageArtifactsAsync(Guid messageId, ArtifactUpdateRequest update);
     Task<VaultBrowserResponse> BrowseVaultAsync(string? path = null);
+    Task<ProviderSwitchResult> SwitchLlmProviderAsync(string providerName);
 }
