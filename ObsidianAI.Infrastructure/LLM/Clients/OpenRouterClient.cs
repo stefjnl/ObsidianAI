@@ -28,7 +28,7 @@ public class OpenRouterClient : IAIClient
         _logger = logger;
         
         _apiKey = configuration["OpenRouter:ApiKey"] 
-            ?? throw new InvalidOperationException("OpenRouter API key not found in user secrets");
+            ?? throw new InvalidOperationException("OpenRouter API key not found. Please provide it via configuration (e.g., appsettings.json, environment variables, user secrets, or other supported providers) using the key 'OpenRouter:ApiKey'.");
     }
 
     public string ProviderName => "OpenRouter";
