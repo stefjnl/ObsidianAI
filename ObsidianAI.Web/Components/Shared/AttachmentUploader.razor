@@ -3,6 +3,7 @@
 @inject IHttpClientFactory HttpClientFactory
 @inject ILogger<AttachmentUploader> Logger
 @inject IJSRuntime JSRuntime
+@using System.Net.Http.Headers
 
 @if (ConversationId.HasValue)
 {
@@ -60,8 +61,26 @@
                 continue;
             }
 
+            // Read the incoming file into memory so the content can be resent safely by HttpClient retries.
+            // Input files are limited to 1MB above, so buffering into memory is acceptable here.
             var content = new MultipartFormDataContent();
-            var fileContent = new StreamContent(file.OpenReadStream());
+
+            await using var stream = file.OpenReadStream();
+            var buffer = new byte[file.Size];
+            var totalRead = 0;
+            while (totalRead < buffer.Length)
+            {
+                var read = await stream.ReadAsync(buffer, totalRead, buffer.Length - totalRead);
+                if (read == 0) break;
+                totalRead += read;
+            }
+
+            var fileContent = new ByteArrayContent(buffer, 0, totalRead);
+            if (!string.IsNullOrWhiteSpace(file.ContentType))
+            {
+                fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(file.ContentType);
+            }
+
             content.Add(fileContent, "file", file.Name);
 
             try
