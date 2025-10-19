@@ -39,13 +39,13 @@ namespace ObsidianAI.Infrastructure.LLM
 
             var usage = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
-            TryAddNumber(usage, usageDetails, "InputTokens", "inputTokens");
-            TryAddNumber(usage, usageDetails, "OutputTokens", "outputTokens");
-            TryAddNumber(usage, usageDetails, "TotalTokens", "totalTokens");
-            TryAddNumber(usage, usageDetails, "ReasoningTokens", "reasoningTokens");
-            TryAddNumber(usage, usageDetails, "TotalTokensIncludingToolCalls", "totalTokensIncludingToolCalls");
-            TryAddNumber(usage, usageDetails, "CacheReadTokens", "cacheReadTokens");
-            TryAddNumber(usage, usageDetails, "CacheWriteTokens", "cacheWriteTokens");
+            TryAddNumber(usage, usageDetails, "InputTokenCount", "inputTokens");
+            TryAddNumber(usage, usageDetails, "OutputTokenCount", "outputTokens");
+            TryAddNumber(usage, usageDetails, "TotalTokenCount", "totalTokens");
+            TryAddNumber(usage, usageDetails, "ReasoningTokenCount", "reasoningTokens");
+            TryAddNumber(usage, usageDetails, "TotalTokenCountIncludingToolCalls", "totalTokensIncludingToolCalls");
+            TryAddNumber(usage, usageDetails, "CacheReadTokenCount", "cacheReadTokens");
+            TryAddNumber(usage, usageDetails, "CacheWriteTokenCount", "cacheWriteTokens");
             TryAddNumber(usage, usageDetails, "InvocationCount", "invocationCount");
 
             var additionalMetrics = TryGetDictionary(usageDetails, "AdditionalMetrics");
