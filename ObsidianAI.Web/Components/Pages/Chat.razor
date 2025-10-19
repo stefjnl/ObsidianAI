@@ -6,6 +6,7 @@
 @using ObsidianAI.Web.Components.Shared
 @using Microsoft.AspNetCore.SignalR.Client
 @using System.Collections.Generic
+@using System.Globalization
 @using System.Text.RegularExpressions
 @using System.Text.Json
 @using System.Threading
@@ -478,6 +479,7 @@
             Logger.LogInformation("Successfully loaded conversation {ConversationId} with {MessageCount} messages", conversationId, detail.Messages.Count);
             currentConversationId = detail.Id;
             conversationHistory = detail.Messages.ToList();
+            RecalculateRunningTokenTotals();
             currentConversationMetadata = new ConversationMetadata(
                 detail.Id,
                 detail.Title,
@@ -564,7 +566,8 @@
             Sources = new List<string>()
         };
 
-        conversationHistory.Add(userMessage);
+    conversationHistory.Add(userMessage);
+    RecalculateRunningTokenTotals();
         pendingUserMessageClientId = userClientId;
         var messageToSend = currentMessage;
         currentMessage = string.Empty;
@@ -586,7 +589,8 @@
             Sources = new List<string>()
         };
 
-        conversationHistory.Add(currentAiMessage);
+    conversationHistory.Add(currentAiMessage);
+    RecalculateRunningTokenTotals();
         pendingAssistantMessageClientId = assistantClientId;
         StateHasChanged();
         await ScrollToBottom();
@@ -801,6 +805,16 @@
 
     private async Task HandleMetadataAsync(string metadataJson)
     {
+        if (TryCreateUsageSummary(metadataJson, out var usageSummary))
+        {
+            await InvokeAsync(() =>
+            {
+                ApplyUsageSummary(usageSummary);
+                return Task.CompletedTask;
+            });
+            return;
+        }
+
         StreamingMetadata? metadata = null;
         try
         {
@@ -1249,7 +1263,8 @@
             Timestamp = DateTime.UtcNow
         };
 
-        conversationHistory.Add(editMessage);
+    conversationHistory.Add(editMessage);
+    RecalculateRunningTokenTotals();
         StateHasChanged();
         await ScrollToBottom();
     }
@@ -1735,6 +1750,7 @@
             Timestamp = DateTime.UtcNow
         };
         conversationHistory.Add(settingsMessage);
+        RecalculateRunningTokenTotals();
         StateHasChanged();
     }
 
@@ -1841,6 +1857,142 @@
         }
 
         pendingAssistantMessageClientId = null;
+    }
+
+    private void ApplyUsageSummary(global::ObsidianAI.Web.Models.TokenUsageSummary usageSummary)
+    {
+        if (currentAiMessage is not null)
+        {
+            var index = conversationHistory.FindLastIndex(m => m.ClientId == currentAiMessage.ClientId);
+            if (index >= 0)
+            {
+                currentAiMessage = currentAiMessage with { Usage = usageSummary };
+                conversationHistory[index] = currentAiMessage;
+                RecalculateRunningTokenTotals();
+                currentAiMessage = conversationHistory[index];
+            }
+        }
+
+        providerStatusIsError = false;
+        providerStatusMessage = usageSummary.FormatForDisplay();
+
+        providerStatusCts?.Cancel();
+        providerStatusCts?.Dispose();
+        providerStatusCts = new CancellationTokenSource();
+        _ = DismissProviderStatusMessageAsync(providerStatusCts.Token);
+
+        StateHasChanged();
+    }
+
+    private static bool TryCreateUsageSummary(string metadataJson, out global::ObsidianAI.Web.Models.TokenUsageSummary usageSummary)
+    {
+        usageSummary = null!;
+
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+            var root = document.RootElement;
+
+            if (!root.TryGetProperty("type", out var typeElement) ||
+                !string.Equals(typeElement.GetString(), "usage", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!root.TryGetProperty("usage", out var usageElement) || usageElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            usageSummary = new global::ObsidianAI.Web.Models.TokenUsageSummary(
+                TryGetInt64(usageElement, "inputTokens"),
+                TryGetInt64(usageElement, "outputTokens"),
+                TryGetInt64(usageElement, "totalTokens"));
+            return true;
+        }
+        catch (JsonException)
+        {
+            usageSummary = null!;
+            return false;
+        }
+    }
+
+    private static long? TryGetInt64(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out var numeric))
+        {
+            return numeric;
+        }
+
+        if (property.ValueKind == JsonValueKind.String &&
+            long.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    private void RecalculateRunningTokenTotals()
+    {
+        long runningTotal = 0;
+
+        for (var i = 0; i < conversationHistory.Count; i++)
+        {
+            var message = conversationHistory[i];
+            long? messageTotal = null;
+
+            if (message.Usage is not null)
+            {
+                if (message.Usage.TotalTokens.HasValue)
+                {
+                    messageTotal = message.Usage.TotalTokens.Value;
+                }
+                else
+                {
+                    long components = 0;
+                    var hasComponent = false;
+
+                    if (message.Usage.InputTokens.HasValue)
+                    {
+                        components += message.Usage.InputTokens.Value;
+                        hasComponent = true;
+                    }
+
+                    if (message.Usage.OutputTokens.HasValue)
+                    {
+                        components += message.Usage.OutputTokens.Value;
+                        hasComponent = true;
+                    }
+
+                    if (hasComponent)
+                    {
+                        messageTotal = components;
+                    }
+                }
+            }
+
+            if (messageTotal.HasValue)
+            {
+                runningTotal += Math.Max(0, messageTotal.Value);
+            }
+
+            conversationHistory[i] = message with { RunningTokenTotal = runningTotal };
+        }
+
+        if (currentAiMessage is not null)
+        {
+            var refreshed = conversationHistory.FirstOrDefault(m => m.ClientId == currentAiMessage.ClientId);
+            if (refreshed is not null)
+            {
+                currentAiMessage = refreshed;
+            }
+        }
     }
 
     private sealed record StreamingMetadata(Guid ConversationId, Guid? UserMessageId, Guid? AssistantMessageId, StreamingFileOperation? FileOperation);

@@ -1,5 +1,6 @@
 @using ObsidianAI.Web.Models
 @using System
+@using System.Globalization
 @using System.Linq
 
 <div class="message @(Message.Sender == MessageSender.User ? "user" : "")">
@@ -57,6 +58,18 @@
         {
             <FileOperationResult Result="Message.FileOperation" />
         }
+
+        @if (Message.Usage is not null)
+        {
+            <div class="usage-summary" aria-label="Token usage for this response">
+                🔢 @(Message.Usage?.FormatForDisplay() ?? string.Empty)
+            </div>
+        }
+
+        <div class="token-counter" aria-label="Running token total">
+            <span class="token-counter__label">Total tokens:</span>
+            <span class="token-counter__value">@FormatRunningTotal(Message.RunningTokenTotal)</span>
+        </div>
     </div>
 </div>
 
@@ -107,4 +120,6 @@
 
         return url;
     }
+
+    private static string FormatRunningTotal(long total) => total.ToString("N0", CultureInfo.InvariantCulture);
 }

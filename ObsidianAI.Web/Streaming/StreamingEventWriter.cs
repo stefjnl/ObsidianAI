@@ -66,7 +66,10 @@ namespace ObsidianAI.Web.Streaming
                     }
                     else if (update.Kind == ChatStreamEventKind.Metadata && !string.IsNullOrEmpty(update.Metadata))
                     {
-                        logger.LogInformation("Sending metadata event: {Payload}", update.Metadata);
+                        if (!UsageMetadataDiagnostics.TryLogUsage(update.Metadata, logger))
+                        {
+                            logger.LogInformation("Sending metadata event: {Payload}", update.Metadata);
+                        }
                         await context.Response.WriteAsync($"event: metadata\ndata: {update.Metadata}\n\n", ct);
                         await context.Response.Body.FlushAsync(ct);
                     }
@@ -94,5 +97,6 @@ namespace ObsidianAI.Web.Streaming
                 await context.Response.Body.FlushAsync(ct);
             }
         }
+
     }
 }

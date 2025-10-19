@@ -2,99 +2,100 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 
-namespace ObsidianAI.Infrastructure.LLM;
-
-internal static class ToolStreamingFormatter
+namespace ObsidianAI.Infrastructure.LLM
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
+    internal static class ToolStreamingFormatter
     {
-        WriteIndented = false,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-    };
-
-    public static string CreatePayload(string toolName, string phase, object? arguments = null, object? result = null)
-    {
-        if (string.IsNullOrWhiteSpace(toolName))
+        private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
         {
-            toolName = "unknown";
-        }
-
-        var payload = new Dictionary<string, object?>
-        {
-            ["name"] = toolName,
-            ["phase"] = phase
+            WriteIndented = false,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
         };
 
-        var normalizedArgs = Normalize(arguments);
-        if (normalizedArgs is not null)
+        public static string CreatePayload(string toolName, string phase, object? arguments = null, object? result = null)
         {
-            payload["arguments"] = normalizedArgs;
-        }
-
-        var normalizedResult = Normalize(result);
-        if (normalizedResult is not null)
-        {
-            payload["result"] = normalizedResult;
-        }
-
-        return JsonSerializer.Serialize(payload, SerializerOptions);
-    }
-
-    private static object? Normalize(object? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        if (value is JsonElement element)
-        {
-            return element;
-        }
-
-        if (value is string str)
-        {
-            if (TryParseJson(str, out var parsed))
+            if (string.IsNullOrWhiteSpace(toolName))
             {
-                return parsed;
+                toolName = "unknown";
             }
 
-            return str;
-        }
-
-        var valueType = value.GetType();
-        if (valueType.FullName is "System.BinaryData")
-        {
-            var text = value.ToString();
-            if (!string.IsNullOrWhiteSpace(text) && TryParseJson(text, out var parsedBinary))
+            var payload = new Dictionary<string, object?>
             {
-                return parsedBinary;
+                ["name"] = toolName,
+                ["phase"] = phase
+            };
+
+            var normalizedArgs = Normalize(arguments);
+            if (normalizedArgs is not null)
+            {
+                payload["arguments"] = normalizedArgs;
             }
 
-            return text;
+            var normalizedResult = Normalize(result);
+            if (normalizedResult is not null)
+            {
+                payload["result"] = normalizedResult;
+            }
+
+            return JsonSerializer.Serialize(payload, SerializerOptions);
         }
 
-        try
+        private static object? Normalize(object? value)
         {
-            return JsonSerializer.SerializeToElement(value, SerializerOptions);
-        }
-        catch
-        {
-            return value.ToString();
-        }
-    }
+            if (value is null)
+            {
+                return null;
+            }
 
-    private static bool TryParseJson(string text, out JsonElement element)
-    {
-        try
-        {
-            element = JsonSerializer.Deserialize<JsonElement>(text);
-            return true;
+            if (value is JsonElement element)
+            {
+                return element;
+            }
+
+            if (value is string str)
+            {
+                if (TryParseJson(str, out var parsed))
+                {
+                    return parsed;
+                }
+
+                return str;
+            }
+
+            var valueType = value.GetType();
+            if (valueType.FullName is "System.BinaryData")
+            {
+                var text = value.ToString();
+                if (!string.IsNullOrWhiteSpace(text) && TryParseJson(text, out var parsedBinary))
+                {
+                    return parsedBinary;
+                }
+
+                return text;
+            }
+
+            try
+            {
+                return JsonSerializer.SerializeToElement(value, SerializerOptions);
+            }
+            catch
+            {
+                return value.ToString();
+            }
         }
-        catch (JsonException)
+
+        private static bool TryParseJson(string text, out JsonElement element)
         {
-            element = default;
-            return false;
+            try
+            {
+                element = JsonSerializer.Deserialize<JsonElement>(text);
+                return true;
+            }
+            catch (JsonException)
+            {
+                element = default;
+                return false;
+            }
         }
     }
 }

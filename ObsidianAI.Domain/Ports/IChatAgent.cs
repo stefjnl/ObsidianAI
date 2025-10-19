@@ -11,14 +11,14 @@ namespace ObsidianAI.Domain.Ports
     /// </summary>
     public interface IChatAgent
     {
-        /// <summary>
-        /// Sends a single message and returns the full string response.
+    /// <summary>
+    /// Sends a single message and returns the full response payload.
         /// </summary>
         /// <param name="message">The user message to send.</param>
-    /// <param name="threadId">Optional agent thread identifier used to preserve conversation state.</param>
+	/// <param name="threadId">Optional agent thread identifier used to preserve conversation state.</param>
         /// <param name="ct">A cancellation token to cancel the operation.</param>
-        /// <returns>The model response as a string.</returns>
-        Task<string> SendAsync(string message, string? threadId = null, CancellationToken ct = default);
+    /// <returns>The model response containing text and optional usage details.</returns>
+    Task<ObsidianAI.Domain.Models.ChatResponse> SendAsync(string message, string? threadId = null, CancellationToken ct = default);
 
         /// <summary>
         /// Streams the model output as an asynchronous sequence of events.
