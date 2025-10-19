@@ -251,12 +251,37 @@ body {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     /* Allow the content area to shrink inside flex containers to avoid horizontal overflow */
     min-width: 0;
+    position: relative;
+    padding-bottom: 42px;
 }
 
 .message.user .message-content {
     background: #f8f9fa;
     border: 1px solid #e0e0e0;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.token-counter {
+    position: absolute;
+    left: 16px;
+    bottom: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    letter-spacing: 0.2px;
+    text-transform: uppercase;
+}
+
+.token-counter__value {
+    font-weight: 700;
+    color: #374151;
+}
+
+.message.user .token-counter {
+    color: #4b5563;
 }
 
 .tool-badge {

@@ -479,6 +479,7 @@
             Logger.LogInformation("Successfully loaded conversation {ConversationId} with {MessageCount} messages", conversationId, detail.Messages.Count);
             currentConversationId = detail.Id;
             conversationHistory = detail.Messages.ToList();
+            RecalculateRunningTokenTotals();
             currentConversationMetadata = new ConversationMetadata(
                 detail.Id,
                 detail.Title,
@@ -565,7 +566,8 @@
             Sources = new List<string>()
         };
 
-        conversationHistory.Add(userMessage);
+    conversationHistory.Add(userMessage);
+    RecalculateRunningTokenTotals();
         pendingUserMessageClientId = userClientId;
         var messageToSend = currentMessage;
         currentMessage = string.Empty;
@@ -587,7 +589,8 @@
             Sources = new List<string>()
         };
 
-        conversationHistory.Add(currentAiMessage);
+    conversationHistory.Add(currentAiMessage);
+    RecalculateRunningTokenTotals();
         pendingAssistantMessageClientId = assistantClientId;
         StateHasChanged();
         await ScrollToBottom();
@@ -1260,7 +1263,8 @@
             Timestamp = DateTime.UtcNow
         };
 
-        conversationHistory.Add(editMessage);
+    conversationHistory.Add(editMessage);
+    RecalculateRunningTokenTotals();
         StateHasChanged();
         await ScrollToBottom();
     }
@@ -1746,6 +1750,7 @@
             Timestamp = DateTime.UtcNow
         };
         conversationHistory.Add(settingsMessage);
+        RecalculateRunningTokenTotals();
         StateHasChanged();
     }
 
@@ -1863,6 +1868,8 @@
             {
                 currentAiMessage = currentAiMessage with { Usage = usageSummary };
                 conversationHistory[index] = currentAiMessage;
+                RecalculateRunningTokenTotals();
+                currentAiMessage = conversationHistory[index];
             }
         }
 
@@ -1929,6 +1936,63 @@
         }
 
         return null;
+    }
+
+    private void RecalculateRunningTokenTotals()
+    {
+        long runningTotal = 0;
+
+        for (var i = 0; i < conversationHistory.Count; i++)
+        {
+            var message = conversationHistory[i];
+            long? messageTotal = null;
+
+            if (message.Usage is not null)
+            {
+                if (message.Usage.TotalTokens.HasValue)
+                {
+                    messageTotal = message.Usage.TotalTokens.Value;
+                }
+                else
+                {
+                    long components = 0;
+                    var hasComponent = false;
+
+                    if (message.Usage.InputTokens.HasValue)
+                    {
+                        components += message.Usage.InputTokens.Value;
+                        hasComponent = true;
+                    }
+
+                    if (message.Usage.OutputTokens.HasValue)
+                    {
+                        components += message.Usage.OutputTokens.Value;
+                        hasComponent = true;
+                    }
+
+                    if (hasComponent)
+                    {
+                        messageTotal = components;
+                    }
+                }
+            }
+
+            if (messageTotal.HasValue)
+            {
+                runningTotal += Math.Max(0, messageTotal.Value);
+            }
+
+            conversationHistory[i] = message with { RunningTokenTotal = runningTotal };
+        }
+
+        if (currentAiMessage is not null)
+        {
+            var refreshed = conversationHistory.FirstOrDefault(m => m.ClientId == currentAiMessage.ClientId);
+            if (refreshed is not null)
+            {
+                currentAiMessage = refreshed;
+            }
+        }
     }
 
     private sealed record StreamingMetadata(Guid ConversationId, Guid? UserMessageId, Guid? AssistantMessageId, StreamingFileOperation? FileOperation);
