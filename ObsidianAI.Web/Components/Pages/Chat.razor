@@ -833,22 +833,8 @@
     {
         try
         {
-            // Get the current URI and parse it
-            var currentUri = new Uri(NavigationManager.Uri);
-
-            // Parse existing query parameters
-            var queryParams = System.Web.HttpUtility.ParseQueryString(currentUri.Query);
-
-            // Update or add the conversationId parameter
-            queryParams["conversationId"] = conversationId.ToString();
-
-            // Rebuild the URI with the updated query string
-            var uriBuilder = new UriBuilder(currentUri)
-            {
-                Query = queryParams.ToString()
-            };
-
-            var target = uriBuilder.Uri.ToString();
+            // Use NavigationManager.GetUriWithQueryParameter to update/add the conversationId parameter
+            var target = NavigationManager.GetUriWithQueryParameter("conversationId", conversationId.ToString());
             Logger.LogInformation("Updating conversation route to: {Target}", target);
 
             // Only navigate if the URI has actually changed
