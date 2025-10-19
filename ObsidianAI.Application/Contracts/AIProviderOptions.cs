@@ -8,7 +8,7 @@ public class AIProviderOptions
     public const string SectionName = "AIProviderOptions";
     
     public string DefaultProvider { get; set; } = "OpenRouter";
-    public string FallbackProvider { get; set; } = "NanoGpt";
+    public string FallbackProvider { get; set; } = "OpenRouter";
     public bool EnableFallback { get; set; } = true;
     public bool EnableCaching { get; set; } = true;
     public int CacheDurationMinutes { get; set; } = 10;
