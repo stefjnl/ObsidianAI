@@ -460,7 +460,28 @@
 
     private async Task SendMessage()
     {
-        if (string.IsNullOrWhiteSpace(currentMessage) || isProcessing || isStreaming)
+        if (string.IsNullOrWhiteSpace(currentMessage))
+        {
+            Logger.LogWarning("Attempted to send empty message");
+            return;
+        }
+
+        if (currentMessage.Length > 10000)
+        {
+            Logger.LogWarning("Message too long: {Length} characters", currentMessage.Length);
+            return;
+        }
+
+        // Sanitize input to prevent XSS
+        currentMessage = System.Web.HttpUtility.HtmlEncode(currentMessage);
+
+        if (string.IsNullOrWhiteSpace(currentMessage))
+        {
+            Logger.LogWarning("Message became empty after sanitization");
+            return;
+        }
+
+        if (isProcessing || isStreaming)
             return;
 
         await EnsureConversationInitializedAsync();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace ObsidianAI.Web.Models
 {
@@ -21,6 +22,8 @@ namespace ObsidianAI.Web.Models
         /// <summary>
         /// The content of the message
         /// </summary>
+        [Required(ErrorMessage = "Message content is required.")]
+        [StringLength(10000, ErrorMessage = "Message cannot exceed 10,000 characters.")]
         public string Content { get; init; } = string.Empty;
         
         /// <summary>
