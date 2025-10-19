@@ -54,9 +54,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAIAgentFactory>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<AppSettings>>();
+            var configuration = sp.GetRequiredService<IConfiguration>();
             var middlewares = sp.GetServices<IFunctionMiddleware>();
             var logger = sp.GetRequiredService<ILogger<ConfiguredAIAgentFactory>>();
-            return new ConfiguredAIAgentFactory(options, middlewares, logger);
+            return new ConfiguredAIAgentFactory(options, configuration, middlewares, logger);
         });
 
         services.AddSingleton<IAgentThreadProvider, InMemoryAgentThreadProvider>();

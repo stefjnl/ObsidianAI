@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using ObsidianAI.Domain.Ports;
 using ObsidianAI.Infrastructure.Configuration;
 using ObsidianAI.Infrastructure.Middleware;
@@ -16,6 +17,7 @@ namespace ObsidianAI.Infrastructure.LLM;
 public class ConfiguredAIAgentFactory : IAIAgentFactory
 {
     private readonly IOptions<AppSettings> _options;
+    private readonly IConfiguration _configuration;
     private readonly IReadOnlyList<IFunctionMiddleware> _middlewares;
     private readonly ILogger<ConfiguredAIAgentFactory> _logger;
 
@@ -23,14 +25,17 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
     /// Initializes a new instance of the <see cref="ConfiguredAIAgentFactory"/> class.
     /// </summary>
     /// <param name="options">The application settings options.</param>
+    /// <param name="configuration">The application configuration.</param>
     /// <param name="middlewares">The function middlewares to wrap around tools.</param>
     /// <param name="logger">The logger instance.</param>
     public ConfiguredAIAgentFactory(
         IOptions<AppSettings> options,
+        IConfiguration configuration,
         IEnumerable<IFunctionMiddleware> middlewares,
         ILogger<ConfiguredAIAgentFactory> logger)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _middlewares = middlewares?.ToList() ?? [];
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -117,7 +122,7 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
         return ProviderName.Equals("LMStudio", StringComparison.OrdinalIgnoreCase)
             ? await LmStudioChatAgent.CreateAsync(_options, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false)
             : ProviderName.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase)
-                ? await OpenRouterChatAgent.CreateAsync(_options, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false)
+                ? await OpenRouterChatAgent.CreateAsync(_options, _configuration, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false)
                 : await LmStudioChatAgent.CreateAsync(_options, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false);
     }
 }

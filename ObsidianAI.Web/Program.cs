@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using ObsidianAI.Application;
 using ObsidianAI.Application.DI;
 using ObsidianAI.Application.Services;
 using ObsidianAI.Domain.Ports;
@@ -52,6 +53,13 @@ builder.Services.AddOpenApi();
 // Add antiforgery
 builder.Services.AddAntiforgery();
 
+// Add in-memory cache for AIProvider
+builder.Services.AddMemoryCache();
+
+// Register AI Provider infrastructure and application layers
+builder.Services.AddAIProviderInfrastructure(builder.Configuration);
+builder.Services.AddAIProviderApplication(builder.Configuration);
+
 // Register health checks with all providers
 builder.Services.AddHealthChecks()
     .AddCheck<ObsidianAI.Infrastructure.HealthChecks.McpHealthCheck>("mcp")
@@ -70,6 +78,10 @@ builder.Services.AddHttpClient<IVaultService, VaultService>(client =>
 {
     client.BaseAddress = new Uri("http://localhost:5244");
 });
+builder.Services.AddHttpClient("ObsidianAI.Api", client =>
+{
+    client.BaseAddress = new Uri("http://localhost:5244");
+});
 
 // Validate required configuration on startup
 var appSettings = builder.Configuration.Get<AppSettings>();
@@ -81,13 +93,13 @@ if (appSettings == null)
 var provider = appSettings.LLM.Provider?.Trim() ?? "LMStudio";
 if (provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase))
 {
-    var apiKey = appSettings.LLM.OpenRouter?.ApiKey?.Trim();
+    var apiKey = builder.Configuration["OpenRouter:ApiKey"];
     if (string.IsNullOrEmpty(apiKey))
     {
         throw new InvalidOperationException(
             "OpenRouter API key is not configured. " +
-            "Set it via user secrets (dotnet user-secrets set \"LLM:OpenRouter:ApiKey\" \"your-key\") " +
-            "or environment variable LLM__OpenRouter__ApiKey.");
+            "Set it via user secrets (dotnet user-secrets set \"OpenRouter:ApiKey\" \"your-key\") " +
+            "or environment variable OpenRouter__ApiKey.");
     }
 }
 else if (provider.Equals("LMStudio", StringComparison.OrdinalIgnoreCase))
@@ -110,6 +122,14 @@ else if (provider.Equals("NanoGPT", StringComparison.OrdinalIgnoreCase))
         throw new InvalidOperationException(
             "NanoGPT endpoint is not configured. " +
             "Set it via appsettings.json or environment variable LLM__NanoGPT__Endpoint.");
+    }
+    var apiKey = builder.Configuration["NanoGpt:ApiKey"];
+    if (string.IsNullOrEmpty(apiKey))
+    {
+        throw new InvalidOperationException(
+            "NanoGPT API key is not configured. " +
+            "Set it via user secrets (dotnet user-secrets set \"NanoGpt:ApiKey\" \"your-key\") " +
+            "or environment variable NanoGpt__ApiKey.");
     }
 }
 else
@@ -151,6 +171,8 @@ app.MapHub<ChatHub>("/chathub");
 // Map REST API endpoints (for future external consumers)
 app.MapObsidianEndpoints();
 app.MapActionCardEndpoints();
+// Map AI endpoints
+app.MapAIEndpoints();
 app.MapHealthChecks("/healthz");
 
 // Map OpenAPI

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ObsidianAI.Domain.Models;
@@ -32,12 +33,13 @@ public class OpenRouterReflectionService : IReflectionService
     /// </summary>
     public OpenRouterReflectionService(
         IOptions<AppSettings> appOptions,
+        IConfiguration configuration,
         ReflectionPromptBuilder promptBuilder,
         ILogger<OpenRouterReflectionService> logger)
     {
         var settings = appOptions.Value.LLM.OpenRouter;
         var endpoint = settings.Endpoint?.Trim() ?? "https://openrouter.ai/api/v1";
-        var apiKey = settings.ApiKey ?? string.Empty;
+        var apiKey = configuration["OpenRouter:ApiKey"] ?? settings.ApiKey ?? string.Empty;
         var model = settings.Model ?? "google/gemini-2.5-flash-lite-preview-09-2025";
 
         var openAIClient = new OpenAIClient(
