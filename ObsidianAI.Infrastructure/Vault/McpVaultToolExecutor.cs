@@ -93,7 +93,7 @@ namespace ObsidianAI.Infrastructure.Vault
         {
             try
             {
-                var client = await _clientProvider.GetClientAsync(ct).ConfigureAwait(false);
+                var client = await _clientProvider.GetClientAsync("obsidian", ct).ConfigureAwait(false);
                 if (client == null)
                 {
                     _logger.LogWarning("MCP client unavailable. Tool {ToolName} cannot be executed.", toolName);

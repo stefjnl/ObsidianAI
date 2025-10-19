@@ -42,7 +42,7 @@ public sealed class ReadFileUseCase
 
         try
         {
-            var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
+            var mcpClient = await _mcpClientProvider.GetClientAsync("obsidian", ct).ConfigureAwait(false);
             if (mcpClient == null)
             {
                 _logger.LogWarning("MCP client is not available. Cannot read file.");

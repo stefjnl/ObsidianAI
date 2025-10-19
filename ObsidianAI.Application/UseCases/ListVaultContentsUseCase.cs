@@ -54,7 +54,7 @@ public sealed class ListVaultContentsUseCase
 
         try
         {
-            var mcpClient = await _mcpClientProvider.GetClientAsync(ct).ConfigureAwait(false);
+            var mcpClient = await _mcpClientProvider.GetClientAsync("obsidian", ct).ConfigureAwait(false);
             if (mcpClient == null)
             {
                 if (cachedEntry is not null && cachedEntry.Paths.Count > 0)

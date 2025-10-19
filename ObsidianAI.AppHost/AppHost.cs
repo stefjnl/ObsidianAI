@@ -1,7 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Add MCP Gateway as an executable resource
-var mcpGateway = builder.AddExecutable("mcp-gateway", "docker", workingDirectory: ".", args: [
+// Obsidian MCP Gateway (existing)
+var obsidianGateway = builder.AddExecutable("obsidian-gateway", "docker", workingDirectory: ".", args: [
     "mcp", "gateway", "run",
     "--transport", "streaming",
     "--port", "8033",
@@ -12,7 +12,7 @@ var mcpGateway = builder.AddExecutable("mcp-gateway", "docker", workingDirectory
 // The MCP gateway runs on localhost:8033 and exposes the MCP endpoint at /mcp
 // Web project now hosts both the Blazor UI and REST API endpoints
 var web = builder.AddProject<Projects.ObsidianAI_Web>("web")
-    .WithEnvironment("MCP_ENDPOINT", "http://localhost:8033/mcp")
-    .WaitFor(mcpGateway);
+    .WithEnvironment("OBSIDIAN_MCP_ENDPOINT", "http://localhost:8033/mcp")
+    .WaitFor(obsidianGateway);
 
 builder.Build().Run();

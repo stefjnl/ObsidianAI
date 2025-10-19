@@ -64,6 +64,13 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<IAgentThreadProvider, InMemoryAgentThreadProvider>();
+        
+        // Register unified MCP client provider
+        services.AddSingleton<IMcpClientProvider, McpClientService>();
+        
+        // Register MCP warmup hosted service
+        services.AddHostedService<McpClientWarmupService>();
+        
         services.AddSingleton<IVaultToolExecutor>(sp =>
         {
             var logger = sp.GetRequiredService<ILogger<McpVaultToolExecutor>>();

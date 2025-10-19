@@ -3,20 +3,22 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace ObsidianAI.Application.Services;
 
 /// <summary>
 /// Default in-memory implementation of <see cref="IMcpToolCatalog"/> that merges MCP tools from
-/// the Obsidian vault and Microsoft Learn endpoints while avoiding redundant discovery calls.
+/// all configured MCP servers while avoiding redundant discovery calls.
 /// </summary>
 public sealed class McpToolCatalog : IMcpToolCatalog
 {
-    private static readonly TimeSpan DefaultTtl = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan DefaultTtl = TimeSpan.FromMinutes(5);
+    private const string CacheKey = "mcp-tools-all";
 
-    private readonly IMcpClientProvider _vaultClientProvider;
-    private readonly IMicrosoftLearnMcpClientProvider _learnClientProvider;
+    private readonly IMcpClientProvider _clientProvider;
+    private readonly IMemoryCache _cache;
     private readonly ILogger<McpToolCatalog> _logger;
     private readonly SemaphoreSlim _sync = new(1, 1);
 
@@ -27,83 +29,109 @@ public sealed class McpToolCatalog : IMcpToolCatalog
     /// Initializes a new instance of the <see cref="McpToolCatalog"/> class.
     /// </summary>
     public McpToolCatalog(
-        IMcpClientProvider vaultClientProvider,
-        IMicrosoftLearnMcpClientProvider learnClientProvider,
+        IMcpClientProvider clientProvider,
+        IMemoryCache cache,
         ILogger<McpToolCatalog> logger)
     {
-        _vaultClientProvider = vaultClientProvider ?? throw new ArgumentNullException(nameof(vaultClientProvider));
-        _learnClientProvider = learnClientProvider ?? throw new ArgumentNullException(nameof(learnClientProvider));
+        _clientProvider = clientProvider ?? throw new ArgumentNullException(nameof(clientProvider));
+        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <inheritdoc />
     public async Task<McpToolCatalogSnapshot> GetToolsAsync(CancellationToken ct = default)
     {
-    if (_cachedSnapshot is { } snapshot && snapshot.ExpiresAt > DateTimeOffset.UtcNow)
+        if (_cache.TryGetValue<McpToolCatalogSnapshot>(CacheKey, out var cachedSnapshot) && cachedSnapshot != null)
         {
-            return snapshot;
+            _logger.LogDebug("Returning {Count} tools from cache", cachedSnapshot.ObsidianToolCount + cachedSnapshot.MicrosoftLearnToolCount);
+            return cachedSnapshot;
         }
 
         await _sync.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_cachedSnapshot is { } refreshedSnapshot && refreshedSnapshot.ExpiresAt > DateTimeOffset.UtcNow)
+            if (_cache.TryGetValue<McpToolCatalogSnapshot>(CacheKey, out var refreshedSnapshot) && refreshedSnapshot != null)
             {
                 return refreshedSnapshot;
             }
 
-            var mergedTools = new List<object>();
-            var vaultToolCount = 0;
-            var learnToolCount = 0;
-
-            var vaultClient = await _vaultClientProvider.GetClientAsync(ct).ConfigureAwait(false);
-            if (vaultClient is not null)
+            var allTools = await FetchAllToolsAsync(ct);
+            
+            _cache.Set(CacheKey, _cachedSnapshot, new MemoryCacheEntryOptions
             {
-                try
-                {
-                    var vaultTools = await vaultClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
-                    vaultToolCount = AppendTools(mergedTools, vaultTools);
-                }
-                catch (Exception ex) when (!ct.IsCancellationRequested)
-                {
-                    _logger.LogWarning(ex, "Failed to list Obsidian MCP tools. Using previously cached set when available.");
-                }
-            }
-            else
-            {
-                _logger.LogDebug("Obsidian MCP client unavailable when refreshing tool catalog.");
-            }
+                AbsoluteExpirationRelativeToNow = DefaultTtl,
+                Priority = CacheItemPriority.Normal
+            });
 
-            var learnClient = await _learnClientProvider.GetClientAsync(ct).ConfigureAwait(false);
-            if (learnClient is not null)
-            {
-                try
-                {
-                    var learnTools = await learnClient.ListToolsAsync(cancellationToken: ct).ConfigureAwait(false);
-                    learnToolCount = AppendTools(mergedTools, learnTools);
-                }
-                catch (Exception ex) when (!ct.IsCancellationRequested)
-                {
-                    _logger.LogWarning(ex, "Failed to list Microsoft Learn MCP tools. Using previously cached set when available.");
-                }
-            }
-            else
-            {
-                _logger.LogDebug("Microsoft Learn MCP client unavailable when refreshing tool catalog.");
-            }
+            _logger.LogInformation("Cached {Count} tools from {ServerCount} servers", 
+                allTools.Count, 
+                _clientProvider.GetAvailableServers().Count);
 
-            var expiresAt = DateTimeOffset.UtcNow.Add(DefaultTtl);
-            _cachedTools = mergedTools.ToArray();
-            _cachedSnapshot = new McpToolCatalogSnapshot(_cachedTools, vaultToolCount, learnToolCount, expiresAt);
-
-            _logger.LogInformation("📦 Refreshed MCP tool catalog with {ObsidianCount} Obsidian + {LearnCount} Microsoft Learn tools (expires {ExpiresAt:O})", vaultToolCount, learnToolCount, expiresAt);
-
-            return _cachedSnapshot;
+            return _cachedSnapshot!;
         }
         finally
         {
             _sync.Release();
         }
+    }
+
+    private async Task<IReadOnlyList<object>> FetchAllToolsAsync(CancellationToken ct)
+    {
+        var servers = _clientProvider.GetAvailableServers();
+        if (servers.Count == 0)
+        {
+            _logger.LogWarning("No MCP servers available for tool fetching");
+            _cachedSnapshot = new McpToolCatalogSnapshot(Array.Empty<object>(), 0, 0, DateTimeOffset.UtcNow.Add(DefaultTtl));
+            return Array.Empty<object>();
+        }
+
+        _logger.LogInformation("Fetching tools from {Count} MCP servers concurrently", servers.Count);
+
+        var mergedTools = new List<object>();
+        var toolCountByServer = new Dictionary<string, int>();
+
+        // Fetch tools from all servers concurrently
+        var fetchTasks = servers.Select(async serverName =>
+        {
+            try
+            {
+                var tools = await _clientProvider.ListToolsAsync(serverName, ct);
+                var toolsList = tools.ToList();
+                var addedCount = AppendTools(mergedTools, toolsList);
+                
+                lock (toolCountByServer)
+                {
+                    toolCountByServer[serverName] = addedCount;
+                }
+
+                _logger.LogDebug("Fetched {Count} tools from {ServerName}", addedCount, serverName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to fetch tools from {ServerName}", serverName);
+                lock (toolCountByServer)
+                {
+                    toolCountByServer[serverName] = 0;
+                }
+            }
+        });
+
+        await Task.WhenAll(fetchTasks);
+
+        var expiresAt = DateTimeOffset.UtcNow.Add(DefaultTtl);
+        _cachedTools = mergedTools.ToArray();
+        
+        // For backward compatibility, use first two servers as vault and learn counts
+        var serverNames = toolCountByServer.Keys.ToList();
+        var vaultCount = toolCountByServer.GetValueOrDefault(serverNames.ElementAtOrDefault(0) ?? "obsidian", 0);
+        var learnCount = toolCountByServer.GetValueOrDefault(serverNames.ElementAtOrDefault(1) ?? "microsoft-learn", 0);
+        
+        _cachedSnapshot = new McpToolCatalogSnapshot(_cachedTools, vaultCount, learnCount, expiresAt);
+
+        _logger.LogInformation("📦 Refreshed MCP tool catalog with {TotalCount} tools from {ServerCount} servers (expires {ExpiresAt:O})", 
+            mergedTools.Count, servers.Count, expiresAt);
+
+        return _cachedTools;
     }
 
     /// <inheritdoc />

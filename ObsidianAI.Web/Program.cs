@@ -13,10 +13,8 @@ using ObsidianAI.Infrastructure.Middleware;
 using ObsidianAI.Infrastructure.Services;
 using ObsidianAI.Web.Components;
 using ObsidianAI.Web.Endpoints;
-using ObsidianAI.Web.HealthChecks;
 using ObsidianAI.Web.Hubs;
 using ObsidianAI.Web.Services;
-using McpClientService = ObsidianAI.Web.Services.McpClientService;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,12 +35,6 @@ builder.Services.AddObsidianApplication();
 // Add Infrastructure layer with LLM and MCP
 builder.Services.AddObsidianAI(builder.Configuration);
 
-// Add MCP services
-builder.Services.AddSingleton<McpClientService>();
-builder.Services.AddHostedService<McpClientService>(sp => sp.GetRequiredService<McpClientService>());
-builder.Services.AddSingleton<IMcpClientProvider>(sp => sp.GetRequiredService<McpClientService>());
-builder.Services.AddSingleton<IMicrosoftLearnMcpClientProvider, MicrosoftLearnMcpClient>();
-
 // Add HTTP context accessor for endpoint access
 builder.Services.AddHttpContextAccessor();
 
@@ -62,9 +54,8 @@ builder.Services.AddAIProviderApplication(builder.Configuration);
 
 // Register health checks with all providers
 builder.Services.AddHealthChecks()
-    .AddCheck<ObsidianAI.Infrastructure.HealthChecks.McpHealthCheck>("mcp")
-    .AddCheck<ObsidianAI.Infrastructure.HealthChecks.LlmHealthCheck>("llm")
-    .AddCheck<MicrosoftLearnHealthCheck>("microsoft-learn");
+    .AddCheck<ObsidianAI.Infrastructure.HealthChecks.McpHealthCheck>("mcp", tags: new[] { "ready", "mcp" })
+    .AddCheck<ObsidianAI.Infrastructure.HealthChecks.LlmHealthCheck>("llm");
 
 // Register VaultResizeService for UI resize functionality
 builder.Services.AddScoped<IVaultResizeService, VaultResizeService>();

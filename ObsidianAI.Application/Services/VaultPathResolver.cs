@@ -61,14 +61,14 @@ public sealed class VaultPathResolver : IVaultPathResolver
 
         try
         {
-            var client = await _mcpClientProvider.GetClientAsync(cancellationToken).ConfigureAwait(false);
-            if (client is null)
+            var mcpClient = await _mcpClientProvider.GetClientAsync("obsidian", cancellationToken).ConfigureAwait(false);
+            if (mcpClient is null)
             {
                 _logger.LogDebug("MCP client unavailable; returning normalized fallback for '{Candidate}'", candidatePath);
                 return fallback;
             }
 
-            var toolResult = await client.CallToolAsync(
+            var toolResult = await mcpClient.CallToolAsync(
                 "obsidian_list_files_in_vault",
                 new Dictionary<string, object?>(),
                 cancellationToken: cancellationToken).ConfigureAwait(false);

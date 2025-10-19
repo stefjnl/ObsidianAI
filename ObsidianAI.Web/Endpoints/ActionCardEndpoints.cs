@@ -76,7 +76,7 @@ public static class ActionCardEndpoints
             logger.LogInformation("Executing confirmed operation: {FunctionName} with arguments: {Arguments}", 
                 functionName, JsonSerializer.Serialize(arguments));
 
-            var mcpClient = await mcpClientProvider.GetClientAsync(ct);
+            var mcpClient = await mcpClientProvider.GetClientAsync("obsidian", ct);
             if (mcpClient == null)
             {
                 logger.LogError("MCP client not available for ActionCard execution");

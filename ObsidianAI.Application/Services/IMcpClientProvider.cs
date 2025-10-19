@@ -1,18 +1,37 @@
 using ModelContextProtocol.Client;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace ObsidianAI.Application.Services;
 
 /// <summary>
-/// Provides access to a lazily initialized <see cref="McpClient"/> instance.
+/// Provides unified access to multiple MCP server clients.
 /// </summary>
 public interface IMcpClientProvider
 {
     /// <summary>
-    /// Retrieves the shared <see cref="McpClient"/> instance, initializing it if necessary.
+    /// Gets or creates an MCP client for the specified server.
+    /// Returns null if server is not configured or connection fails.
     /// </summary>
-    /// <param name="cancellationToken">Token used to cancel the initialization.</param>
-    /// <returns>The initialized client, or <c>null</c> when MCP is unavailable.</returns>
-    Task<McpClient?> GetClientAsync(CancellationToken cancellationToken = default);
+    Task<McpClient?> GetClientAsync(string serverName, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Lists all available tools from the specified server.
+    /// </summary>
+    Task<IEnumerable<object>> ListToolsAsync(string serverName, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Executes a tool on the specified server.
+    /// </summary>
+    Task<object> CallToolAsync(
+        string serverName, 
+        string toolName, 
+        Dictionary<string, object?> arguments,
+        CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Returns the list of configured and available server names.
+    /// </summary>
+    IReadOnlyCollection<string> GetAvailableServers();
 }
