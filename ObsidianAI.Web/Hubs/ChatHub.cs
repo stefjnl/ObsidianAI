@@ -15,7 +15,7 @@ using System.Text.Json;
 
 namespace ObsidianAI.Web.Hubs;
 
-public class ChatHub : Hub
+public class ChatHub : Hub, IDisposable
 {
     private readonly StreamChatUseCase _streamChatUseCase;
     private readonly ILogger<ChatHub> _logger;
@@ -23,6 +23,7 @@ public class ChatHub : Hub
     private readonly IConversationRepository _conversationRepository;
     private readonly IAttachmentRepository _attachmentRepository;
     private readonly IOptions<AppSettings> _appSettings;
+    private bool _disposed;
 
     public ChatHub(
         StreamChatUseCase streamChatUseCase,
@@ -218,5 +219,18 @@ public class ChatHub : Hub
             _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
         }
         await base.OnDisconnectedAsync(exception);
+    }
+
+    public new void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        // Dispose any unmanaged resources here if needed
+        // For example, if there were any subscriptions or timers
+        base.Dispose();
     }
 }

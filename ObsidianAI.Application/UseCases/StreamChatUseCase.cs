@@ -17,6 +17,18 @@ namespace ObsidianAI.Application.UseCases;
 
 /// <summary>
 /// Use case for streaming chat interactions with an AI agent while persisting conversation history.
+/// 
+/// Responsibilities:
+/// - Orchestrate conversation creation/ensuring
+/// - Agent creation and thread management
+/// - Message persistence (user and assistant)
+/// - Conversation metadata updates
+/// - File operation resolution
+/// 
+/// TODO: Refactor to separate use cases for better SRP:
+/// - ConversationManagementUseCase
+/// - MessagePersistenceUseCase
+/// - AgentInteractionUseCase
 /// </summary>
 public class StreamChatUseCase
 {
@@ -230,6 +242,7 @@ public class StreamChatUseCase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to persist user message {MessageId}", message.Id);
+            throw new ApplicationException("Failed to persist user message.", ex);
         }
         return message;
     }
@@ -265,6 +278,7 @@ public class StreamChatUseCase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to persist assistant message {MessageId}", message.Id);
+            throw new ApplicationException("Failed to persist assistant message.", ex);
         }
         return message;
     }
