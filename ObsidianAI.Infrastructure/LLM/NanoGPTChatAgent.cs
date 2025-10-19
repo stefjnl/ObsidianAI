@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using DomainChatResponse = global::ObsidianAI.Domain.Models.ChatResponse;
 
 namespace ObsidianAI.Infrastructure.LLM;
 
@@ -67,7 +68,7 @@ public sealed class NanoGptChatAgent : IChatAgent
         return Task.FromResult(new NanoGptChatAgent(appOptions, configuration, instructions, tools, threadProvider));
     }
 
-    public async Task<string> SendAsync(string message, string? threadId = null, CancellationToken ct = default)
+    public async Task<DomainChatResponse> SendAsync(string message, string? threadId = null, CancellationToken ct = default)
     {
         if (message is null)
         {
@@ -84,7 +85,9 @@ public sealed class NanoGptChatAgent : IChatAgent
             ? await _agent.RunAsync(message, thread, cancellationToken: ct).ConfigureAwait(false)
             : await _agent.RunAsync(message, cancellationToken: ct).ConfigureAwait(false);
 
-        return response?.Text ?? string.Empty;
+        var text = response?.Text ?? string.Empty;
+        var usage = response?.Usage;
+        return new DomainChatResponse(text, usage);
     }
 
     public async IAsyncEnumerable<ChatStreamEvent> StreamAsync(string message, string? threadId = null, [EnumeratorCancellation] CancellationToken ct = default)
@@ -120,19 +123,27 @@ public sealed class NanoGptChatAgent : IChatAgent
             {
                 if (content is FunctionCallContent callContent && !string.IsNullOrEmpty(callContent.Name))
                 {
-                    var payload = ToolStreamingFormatter.CreatePayload(callContent.Name, "call", callContent.Arguments);
+                    var payload = global::ObsidianAI.Infrastructure.LLM.ToolStreamingFormatter.CreatePayload(callContent.Name, "call", callContent.Arguments);
                     yield return ChatStreamEvent.ToolCall(callContent.Name, payload, "call");
                 }
                 else if (content is FunctionResultContent resultContent)
                 {
                     var toolName = ResolveToolName(resultContent);
-                    var payload = ToolStreamingFormatter.CreatePayload(toolName, "result", result: resultContent.Result);
+                    var payload = global::ObsidianAI.Infrastructure.LLM.ToolStreamingFormatter.CreatePayload(toolName, "result", result: resultContent.Result);
                     yield return ChatStreamEvent.ToolCall(toolName, payload, "result");
 
                     var actionCardJson = ExtractActionCardFromToolResult(resultContent.Result);
                     if (actionCardJson is not null)
                     {
                         yield return ChatStreamEvent.ActionCardEvent(actionCardJson);
+                    }
+                }
+                else if (content is UsageContent usageContent)
+                {
+                    var usagePayload = global::ObsidianAI.Infrastructure.LLM.UsageMetadataBuilder.TryCreateUsagePayload(usageContent.Details);
+                    if (!string.IsNullOrEmpty(usagePayload))
+                    {
+                        yield return ChatStreamEvent.MetadataEvent(usagePayload);
                     }
                 }
             }

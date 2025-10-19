@@ -57,6 +57,13 @@
         {
             <FileOperationResult Result="Message.FileOperation" />
         }
+
+        @if (Message.Usage is not null)
+        {
+            <div class="usage-summary" aria-label="Token usage for this response">
+                🔢 @(Message.Usage?.FormatForDisplay() ?? string.Empty)
+            </div>
+        }
     </div>
 </div>
 

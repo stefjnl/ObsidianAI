@@ -80,18 +80,19 @@ public class StartChatUseCase
             }
         }
 
-        var agent = await _agentFactory.CreateAgentAsync(instructions, tools, _threadProvider, ct).ConfigureAwait(false);
-        var threadId = await EnsureThreadAsync(conversation, persistenceContext.ThreadId, agent, ct).ConfigureAwait(false);
-        var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
-        var responseText = await agent.SendAsync(input.Message, threadId, ct).ConfigureAwait(false);
-        var fileOperation = _extractor.Extract(responseText);
+    var agent = await _agentFactory.CreateAgentAsync(instructions, tools, _threadProvider, ct).ConfigureAwait(false);
+    var threadId = await EnsureThreadAsync(conversation, persistenceContext.ThreadId, agent, ct).ConfigureAwait(false);
+    var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
+    var response = await agent.SendAsync(input.Message, threadId, ct).ConfigureAwait(false);
+    var responseText = response.Text;
+    var fileOperation = _extractor.Extract(responseText);
         var resolvedOperation = await ResolveFileOperationAsync(fileOperation, ct).ConfigureAwait(false);
 
         var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, responseText, resolvedOperation, ct).ConfigureAwait(false);
 
         await UpdateConversationMetadataAsync(conversation.Id, persistenceContext.TitleSource ?? input.Message, ct).ConfigureAwait(false);
 
-        return new Contracts.StartChatResult(conversation.Id, userMessage.Id, assistantMessage.Id, responseText, resolvedOperation);
+    return new Contracts.StartChatResult(conversation.Id, userMessage.Id, assistantMessage.Id, responseText, resolvedOperation, response.Usage);
     }
 
     private async Task<string> EnsureThreadAsync(Conversation conversation, string? persistedThreadId, IChatAgent agent, CancellationToken ct)

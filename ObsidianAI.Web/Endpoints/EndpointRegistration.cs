@@ -394,7 +394,8 @@ public static class EndpointRegistration
                 userMessageId = result.UserMessageId,
                 assistantMessageId = result.AssistantMessageId,
                 text = result.Text,
-                fileOperationResult = result.FileOperation == null ? null : new FileOperationData(result.FileOperation.Action, result.FileOperation.FilePath)
+                fileOperationResult = result.FileOperation == null ? null : new FileOperationData(result.FileOperation.Action, result.FileOperation.FilePath),
+                usage = global::ObsidianAI.Infrastructure.LLM.UsageMetadataBuilder.TryCreateUsageObject(result.Usage)
             });
         });
 

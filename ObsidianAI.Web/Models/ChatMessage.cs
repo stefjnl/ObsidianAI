@@ -63,6 +63,11 @@ namespace ObsidianAI.Web.Models
     /// Reference URLs associated with this message (for example, Microsoft Learn docs).
     /// </summary>
     public List<string> Sources { get; init; } = new();
+
+    /// <summary>
+    /// Token usage metrics reported for this message, when available.
+    /// </summary>
+    public TokenUsageSummary? Usage { get; init; }
         
         /// <summary>
         /// Whether the message is currently being processed

@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Extensions.AI;
 
 namespace ObsidianAI.Application.Contracts;
 
@@ -10,9 +11,11 @@ namespace ObsidianAI.Application.Contracts;
 /// <param name="AssistantMessageId">Identifier of the persisted assistant message.</param>
 /// <param name="Text">The full text response from the AI agent.</param>
 /// <param name="FileOperation">An optional file operation extracted from the response.</param>
+/// <param name="Usage">Optional token usage details associated with the turn.</param>
 public sealed record StartChatResult(
 	Guid ConversationId,
 	Guid UserMessageId,
 	Guid AssistantMessageId,
 	string Text,
-	ObsidianAI.Domain.Models.FileOperation? FileOperation);
+	ObsidianAI.Domain.Models.FileOperation? FileOperation,
+	UsageDetails? Usage);

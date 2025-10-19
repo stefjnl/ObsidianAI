@@ -117,7 +117,10 @@ public class ChatHub : Hub, IDisposable
                 }
                 else if (evt.Kind == ChatStreamEventKind.Metadata && !string.IsNullOrEmpty(evt.Metadata))
                 {
-                    _logger.LogInformation("Metadata event: {Payload}", evt.Metadata);
+                    if (!Streaming.UsageMetadataDiagnostics.TryLogUsage(evt.Metadata, _logger))
+                    {
+                        _logger.LogInformation("Metadata event: {Payload}", evt.Metadata);
+                    }
                     await Clients.Caller.SendAsync("Metadata", evt.Metadata);
                 }
                 else if (evt.Kind == ChatStreamEventKind.Text && !string.IsNullOrEmpty(evt.Text))
