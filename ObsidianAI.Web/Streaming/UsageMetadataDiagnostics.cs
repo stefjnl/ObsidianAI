@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using ObsidianAI.Web.Models;
 
 namespace ObsidianAI.Web.Streaming
 {
