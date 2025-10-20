@@ -17,6 +17,8 @@ public interface IMcpToolCatalog
     /// <returns>A snapshot describing the merged tool collection.</returns>
     Task<McpToolCatalogSnapshot> GetToolsAsync(CancellationToken ct = default);
 
+    Task<IEnumerable<McpTool>> GetToolsFromServersAsync(IEnumerable<string> serverNames, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Forces cache invalidation so the next call will refresh tool metadata.
     /// </summary>

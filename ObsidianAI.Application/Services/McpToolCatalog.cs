@@ -178,4 +178,49 @@ public sealed class McpToolCatalog : IMcpToolCatalog
     {
         return tool.GetType().GetProperty("Name")?.GetValue(tool) as string;
     }
+    public async Task<IEnumerable<McpTool>> GetToolsFromServersAsync(
+        IEnumerable<string> serverNames, 
+        CancellationToken cancellationToken = default)
+    {
+        var serverList = serverNames.ToList();
+        if (serverList.Count == 0)
+        {
+            _logger.LogWarning("No servers specified for tool fetching");
+            return Enumerable.Empty<McpTool>();
+        }
+
+        _logger.LogInformation("Fetching tools from {Count} servers: {Servers}", 
+            serverList.Count, 
+            string.Join(", ", serverList));
+
+        var fetchTasks = serverList.Select(async serverName =>
+        {
+            try
+            {
+                var tools = await _clientProvider.ListToolsAsync(serverName, cancellationToken);
+                var mcpTools = tools.Select(t => new McpTool
+                {
+                    ServerName = serverName,
+                    Tool = t
+                }).ToList();
+
+                _logger.LogDebug("Fetched {Count} tools from {ServerName}", 
+                    mcpTools.Count, serverName);
+                return mcpTools.AsEnumerable();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to fetch tools from {ServerName}", serverName);
+                return Enumerable.Empty<McpTool>();
+            }
+        });
+
+        var results = await Task.WhenAll(fetchTasks);
+        var allTools = results.SelectMany(r => r).ToList();
+
+        _logger.LogInformation("Fetched {TotalCount} tools from {ServerCount} servers", 
+            allTools.Count, serverList.Count);
+
+        return allTools;
+    }
 }

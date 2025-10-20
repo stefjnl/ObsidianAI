@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-  <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.9" />
     <PackageReference Include="ModelContextProtocol" Version="0.4.0-preview.2" />
     <PackageReference Include="AutoMapper" Version="13.0.1" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.5" />
@@ -13,6 +13,8 @@
     <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.251001.1" />
     <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.0.0-preview.251001.2" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="9.9.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.5" />
   </ItemGroup>
 
   <PropertyGroup>

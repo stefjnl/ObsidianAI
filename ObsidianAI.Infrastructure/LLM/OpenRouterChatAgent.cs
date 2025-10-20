@@ -24,9 +24,9 @@ namespace ObsidianAI.Infrastructure.LLM
         private readonly IAgentThreadProvider? _threadProvider;
 
         /// <summary>
-        /// Private constructor - use CreateAsync factory method instead.
+        /// Initializes a new instance of the OpenRouterChatAgent.
         /// </summary>
-        private OpenRouterChatAgent(
+        public OpenRouterChatAgent(
             IOptions<AppSettings> appOptions,
             IConfiguration configuration,
             string instructions,

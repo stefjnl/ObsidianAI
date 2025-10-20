@@ -180,10 +180,13 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Log LLM provider configuration
-var agentFactory = app.Services.GetRequiredService<IAIAgentFactory>();
-var appSettingsOptions = app.Services.GetRequiredService<IOptions<AppSettings>>();
-var providerName = agentFactory.ProviderName;
-var modelName = agentFactory.GetModelName();
-app.Logger.LogInformation("Using LLM provider: {Provider}, Model: {Model}", providerName, modelName);
+using (var scope = app.Services.CreateScope())
+{
+    var agentFactory = scope.ServiceProvider.GetRequiredService<IAIAgentFactory>();
+    var appSettingsOptions = scope.ServiceProvider.GetRequiredService<IOptions<AppSettings>>();
+    var providerName = agentFactory.ProviderName;
+    var modelName = agentFactory.GetModelName();
+    app.Logger.LogInformation("Using LLM provider: {Provider}, Model: {Model}", providerName, modelName);
+}
 
 await app.RunAsync();

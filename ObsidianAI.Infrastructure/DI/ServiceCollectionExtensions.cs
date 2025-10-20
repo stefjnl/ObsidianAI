@@ -50,10 +50,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IReflectionService, OpenRouterReflectionService>();
 
         // Register reflection middleware
-        services.AddSingleton<IFunctionMiddleware, ReflectionFunctionMiddleware>();
+        services.AddScoped<IFunctionMiddleware, ReflectionFunctionMiddleware>();
 
         // Register agent factory with middleware injection
-        services.AddSingleton<IAIAgentFactory>(sp =>
+        services.AddScoped<IAIAgentFactory>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<AppSettings>>();
             var configuration = sp.GetRequiredService<IConfiguration>();
@@ -67,6 +67,9 @@ public static class ServiceCollectionExtensions
         
         // Register unified MCP client provider
         services.AddSingleton<IMcpClientProvider, McpClientService>();
+        
+        // Register tool selection strategy
+        services.AddSingleton<IToolSelectionStrategy, KeywordBasedToolSelectionStrategy>();
         
         // Register MCP warmup hosted service
         services.AddHostedService<McpClientWarmupService>();

@@ -3,6 +3,8 @@ namespace ObsidianAI.Infrastructure.LLM;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ObsidianAI.Domain.Ports;
+using ObsidianAI.Domain.Services;
+using ObsidianAI.Application.Services;
 using ObsidianAI.Infrastructure.Configuration;
 using ObsidianAI.Infrastructure.LLM.Clients;
 using ObsidianAI.Infrastructure.LLM.Factories;
@@ -72,10 +74,23 @@ public static class DependencyInjection
         services.AddScoped<IAIClient, LMStudioClient>();
 
         // ========================================================================
+        // Chat Agents (IChatAgent)
+        // ========================================================================
+        
+        
+        // ========================================================================
+        // Reflection Services
+        // ========================================================================
+        
+        services.AddScoped<IReflectionService, OpenRouterReflectionService>();
+        
+        // ========================================================================
         // Factory
         // ========================================================================
         
         services.AddScoped<IAIClientFactory, AIClientFactory>();
+
+        services.AddSingleton<IMcpToolCatalog, McpToolCatalog>();
 
         return services;
     }
