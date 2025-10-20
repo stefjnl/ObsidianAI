@@ -2,24 +2,31 @@ namespace ObsidianAI.Infrastructure.LLM.Factories;
 
 using ObsidianAI.Domain.Ports;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 public class AIClientFactory : IAIClientFactory
 {
-    private readonly IEnumerable<IAIClient> _clients;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<AIClientFactory> _logger;
 
     public AIClientFactory(
-        IEnumerable<IAIClient> clients,
+        IServiceProvider serviceProvider,
         ILogger<AIClientFactory> logger)
     {
-        _clients = clients;
+        _serviceProvider = serviceProvider;
         _logger = logger;
     }
 
     public IAIClient? GetClient(string providerName)
     {
-        var client = _clients.FirstOrDefault(c => 
-            c.ProviderName.Equals(providerName, StringComparison.OrdinalIgnoreCase));
+        // Use service locator pattern to resolve concrete agent by provider name
+        var client = providerName switch
+        {
+            "OpenRouter" => _serviceProvider.GetRequiredService<OpenRouterChatAgent>() as IAIClient,
+            "LMStudio" => _serviceProvider.GetRequiredService<LmStudioChatAgent>() as IAIClient,
+            "NanoGPT" => _serviceProvider.GetRequiredService<NanoGptChatAgent>() as IAIClient,
+            _ => null
+        };
         
         if (client == null)
         {
@@ -29,7 +36,13 @@ public class AIClientFactory : IAIClientFactory
         return client;
     }
 
-    public IEnumerable<IAIClient> GetAllClients() => _clients;
+    public IEnumerable<IAIClient> GetAllClients()
+    {
+        // Return all registered agent-backed clients
+        yield return _serviceProvider.GetRequiredService<OpenRouterChatAgent>();
+        yield return _serviceProvider.GetRequiredService<LmStudioChatAgent>();
+        yield return _serviceProvider.GetRequiredService<NanoGptChatAgent>();
+    }
 
     public async Task<IEnumerable<string>> GetModelsAsync(
         string providerName, 

@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ObsidianAI.Domain.Ports;
 using ObsidianAI.Infrastructure.Configuration;
-using ObsidianAI.Infrastructure.LLM.Clients;
 using ObsidianAI.Infrastructure.LLM.Factories;
 
 public static class DependencyInjection
@@ -27,49 +26,18 @@ public static class DependencyInjection
             configuration.GetSection(LMStudioSettings.SectionName));
 
         // ========================================================================
-        // HTTP Clients
+        // ChatAgent Concrete Registrations (serve both IChatAgent and IAIClient)
         // ========================================================================
         
-        // OpenRouter HTTP Client
-        services.AddHttpClient<OpenRouterClient>((serviceProvider, client) =>
-        {
-            var settings = configuration
-                .GetSection(OpenRouterSettings.SectionName)
-                .Get<OpenRouterSettings>() ?? new OpenRouterSettings();
-            
-            client.BaseAddress = new Uri(settings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
-        });
+        // Register concrete agent types (scoped per request)
+        services.AddScoped<OpenRouterChatAgent>();
+        services.AddScoped<LmStudioChatAgent>();
+        services.AddScoped<NanoGptChatAgent>();
 
-        // NanoGpt HTTP Client
-        services.AddHttpClient<NanoGptClient>((serviceProvider, client) =>
-        {
-            var settings = configuration
-                .GetSection(NanoGptSettings.SectionName)
-                .Get<NanoGptSettings>() ?? new NanoGptSettings();
-            
-            client.BaseAddress = new Uri(settings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
-        });
-
-        // LMStudio HTTP Client
-        services.AddHttpClient<LMStudioClient>((serviceProvider, client) =>
-        {
-            var settings = configuration
-                .GetSection(LMStudioSettings.SectionName)
-                .Get<LMStudioSettings>() ?? new LMStudioSettings();
-            
-            client.BaseAddress = new Uri(settings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
-        });
-
-        // ========================================================================
-        // AI Clients (Infrastructure Layer)
-        // ========================================================================
-        
-        services.AddScoped<IAIClient, OpenRouterClient>();
-        services.AddScoped<IAIClient, NanoGptClient>();
-        services.AddScoped<IAIClient, LMStudioClient>();
+        // Register keyed IChatAgent services (for agent-based workflows)
+        services.AddKeyedScoped<IChatAgent, OpenRouterChatAgent>("OpenRouter", (sp, key) => sp.GetRequiredService<OpenRouterChatAgent>());
+        services.AddKeyedScoped<IChatAgent, LmStudioChatAgent>("LMStudio", (sp, key) => sp.GetRequiredService<LmStudioChatAgent>());
+        services.AddKeyedScoped<IChatAgent, NanoGptChatAgent>("NanoGPT", (sp, key) => sp.GetRequiredService<NanoGptChatAgent>());
 
         // ========================================================================
         // Factory
