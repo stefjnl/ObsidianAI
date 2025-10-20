@@ -19,7 +19,16 @@ namespace ObsidianAI.Infrastructure.LLM
     public sealed class LmStudioChatAgent : BaseChatAgent, IChatAgent, IAIClient
     {
         /// <summary>
-        /// Private constructor - use CreateAsync factory method instead.
+        /// Constructor for DI. For factory-based creation with tools, use CreateAsync.
+        /// </summary>
+        public LmStudioChatAgent(
+            IOptions<AppSettings> appOptions)
+            : this(appOptions, string.Empty, null, null)
+        {
+        }
+
+        /// <summary>
+        /// Private constructor used by factory method and DI constructor.
         /// </summary>
         private LmStudioChatAgent(
             IOptions<AppSettings> appOptions,

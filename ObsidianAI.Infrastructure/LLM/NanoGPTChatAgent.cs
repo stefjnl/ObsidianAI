@@ -18,6 +18,19 @@ namespace ObsidianAI.Infrastructure.LLM;
 /// </summary>
 public sealed class NanoGptChatAgent : BaseChatAgent, IChatAgent, IAIClient
 {
+    /// <summary>
+    /// Constructor for DI. For factory-based creation with tools, use CreateAsync.
+    /// </summary>
+    public NanoGptChatAgent(
+        IOptions<AppSettings> appOptions,
+        IConfiguration configuration)
+        : this(appOptions, configuration, string.Empty, null, null)
+    {
+    }
+
+    /// <summary>
+    /// Private constructor used by factory method and DI constructor.
+    /// </summary>
     private NanoGptChatAgent(
         IOptions<AppSettings> appOptions,
         IConfiguration configuration,

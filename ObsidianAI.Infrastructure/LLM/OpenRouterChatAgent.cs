@@ -21,7 +21,17 @@ namespace ObsidianAI.Infrastructure.LLM
         private readonly HttpClient? _httpClient;
 
         /// <summary>
-        /// Private constructor - use CreateAsync factory method instead.
+        /// Constructor for DI. For factory-based creation with tools, use CreateAsync.
+        /// </summary>
+        public OpenRouterChatAgent(
+            IOptions<AppSettings> appOptions,
+            IConfiguration configuration)
+            : this(appOptions, configuration, string.Empty, null, null, null)
+        {
+        }
+
+        /// <summary>
+        /// Private constructor used by factory method and DI constructor.
         /// </summary>
         private OpenRouterChatAgent(
             IOptions<AppSettings> appOptions,
