@@ -14,20 +14,40 @@ using DomainChatResponse = global::ObsidianAI.Domain.Models.ChatResponse;
 namespace ObsidianAI.Infrastructure.LLM;
 
 /// <summary>
-/// IChatAgent implementation for NanoGPT deployments using the OpenAI-compatible pipeline.
+/// IChatAgent and IAIClient implementation for NanoGPT deployments using the OpenAI-compatible pipeline.
 /// </summary>
-public sealed class NanoGptChatAgent : IChatAgent
+public sealed class NanoGptChatAgent : BaseChatAgent, IChatAgent, IAIClient
 {
-    private readonly IChatClient _chatClient;
-    private readonly ChatClientAgent _agent;
-    private readonly IAgentThreadProvider? _threadProvider;
+    /// <summary>
+    /// Constructor for DI. For factory-based creation with tools, use CreateAsync.
+    /// </summary>
+    public NanoGptChatAgent(
+        IOptions<AppSettings> appOptions,
+        IConfiguration configuration)
+        : this(appOptions, configuration, string.Empty, null, null)
+    {
+    }
 
+    /// <summary>
+    /// Private constructor used by factory method and DI constructor.
+    /// </summary>
     private NanoGptChatAgent(
         IOptions<AppSettings> appOptions,
         IConfiguration configuration,
         string instructions,
         IEnumerable<object>? tools,
         IAgentThreadProvider? threadProvider)
+        : base(
+            CreateChatClient(appOptions, configuration),
+            "NanoGptAgent",
+            instructions,
+            tools,
+            threadProvider,
+            (appOptions.Value.LLM.NanoGPT ?? new NanoGptSettings()).Model ?? "nanogpt-model")
+    {
+    }
+
+    private static IChatClient CreateChatClient(IOptions<AppSettings> appOptions, IConfiguration configuration)
     {
         var nanoGptSettings = appOptions.Value.LLM.NanoGPT ?? new NanoGptSettings();
         var endpoint = nanoGptSettings.Endpoint?.Trim();
@@ -47,14 +67,7 @@ public sealed class NanoGptChatAgent : IChatAgent
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAI.OpenAIClientOptions { Endpoint = new Uri(endpoint) });
 
-        _chatClient = client.GetChatClient(model).AsIChatClient();
-        var aiTools = tools?.OfType<AITool>().ToArray() ?? Array.Empty<AITool>();
-        _agent = new ChatClientAgent(
-            _chatClient,
-            name: "NanoGptAgent",
-            instructions: instructions ?? string.Empty,
-            tools: aiTools);
-        _threadProvider = threadProvider;
+        return client.GetChatClient(model).AsIChatClient();
     }
 
     public static Task<NanoGptChatAgent> CreateAsync(
@@ -68,122 +81,47 @@ public sealed class NanoGptChatAgent : IChatAgent
         return Task.FromResult(new NanoGptChatAgent(appOptions, configuration, instructions, tools, threadProvider));
     }
 
-    public async Task<DomainChatResponse> SendAsync(string message, string? threadId = null, CancellationToken ct = default)
-    {
-        if (message is null)
-        {
-            throw new ArgumentNullException(nameof(message));
-        }
+    // ========================================================================
+    // IChatAgent Implementation (delegates to BaseChatAgent core methods)
+    // ========================================================================
 
-        AgentThread? thread = null;
-        if (!string.IsNullOrEmpty(threadId) && _threadProvider is not null)
-        {
-            thread = await _threadProvider.GetThreadAsync(threadId, ct).ConfigureAwait(false);
-        }
+    public Task<DomainChatResponse> SendAsync(string message, string? threadId = null, CancellationToken ct = default)
+        => SendAsyncCore(message, threadId, ct);
 
-        var response = thread is not null
-            ? await _agent.RunAsync(message, thread, cancellationToken: ct).ConfigureAwait(false)
-            : await _agent.RunAsync(message, cancellationToken: ct).ConfigureAwait(false);
-
-        var text = response?.Text ?? string.Empty;
-        var usage = response?.Usage;
-        return new DomainChatResponse(text, usage);
-    }
-
-    public async IAsyncEnumerable<ChatStreamEvent> StreamAsync(string message, string? threadId = null, [EnumeratorCancellation] CancellationToken ct = default)
-    {
-        if (message is null)
-        {
-            throw new ArgumentNullException(nameof(message));
-        }
-
-        AgentThread? thread = null;
-        if (!string.IsNullOrEmpty(threadId) && _threadProvider is not null)
-        {
-            thread = await _threadProvider.GetThreadAsync(threadId, ct).ConfigureAwait(false);
-        }
-
-        var stream = thread is not null
-            ? _agent.RunStreamingAsync(message, thread, cancellationToken: ct)
-            : _agent.RunStreamingAsync(message, cancellationToken: ct);
-
-        await foreach (var update in stream.WithCancellation(ct).ConfigureAwait(false))
-        {
-            if (!string.IsNullOrEmpty(update.Text))
-            {
-                yield return ChatStreamEvent.TextChunk(update.Text);
-            }
-
-            if (update.Contents is null)
-            {
-                continue;
-            }
-
-            foreach (var content in update.Contents)
-            {
-                if (content is FunctionCallContent callContent && !string.IsNullOrEmpty(callContent.Name))
-                {
-                    var payload = global::ObsidianAI.Infrastructure.LLM.ToolStreamingFormatter.CreatePayload(callContent.Name, "call", callContent.Arguments);
-                    yield return ChatStreamEvent.ToolCall(callContent.Name, payload, "call");
-                }
-                else if (content is FunctionResultContent resultContent)
-                {
-                    var toolName = ResolveToolName(resultContent);
-                    var payload = global::ObsidianAI.Infrastructure.LLM.ToolStreamingFormatter.CreatePayload(toolName, "result", result: resultContent.Result);
-                    yield return ChatStreamEvent.ToolCall(toolName, payload, "result");
-
-                    var actionCardJson = ExtractActionCardFromToolResult(resultContent.Result);
-                    if (actionCardJson is not null)
-                    {
-                        yield return ChatStreamEvent.ActionCardEvent(actionCardJson);
-                    }
-                }
-                else if (content is UsageContent usageContent)
-                {
-                    var usagePayload = global::ObsidianAI.Infrastructure.LLM.UsageMetadataBuilder.TryCreateUsagePayload(usageContent.Details);
-                    if (!string.IsNullOrEmpty(usagePayload))
-                    {
-                        yield return ChatStreamEvent.MetadataEvent(usagePayload);
-                    }
-                }
-            }
-        }
-    }
+    public IAsyncEnumerable<ChatStreamEvent> StreamAsync(string message, string? threadId = null, CancellationToken ct = default)
+        => StreamAsyncCore(message, threadId, ct);
 
     public Task<AgentThread> CreateThreadAsync(CancellationToken ct = default)
+        => CreateThreadAsyncCore(ct);
+
+    // ========================================================================
+    // IAIClient Implementation (delegates to BaseChatAgent core methods)
+    // ========================================================================
+
+    public string ProviderName => "NanoGPT";
+
+    public Task<AIResponse> CallAsync(AIRequest request, CancellationToken cancellationToken = default)
+        => CallAsyncCore(request, ProviderName, cancellationToken);
+
+    public async Task<bool> IsHealthyAsync(CancellationToken cancellationToken = default)
     {
-        ct.ThrowIfCancellationRequested();
-        return Task.FromResult(_agent.GetNewThread());
+        try
+        {
+            var testRequest = new AIRequest
+            {
+                Prompt = "test",
+                SystemMessage = "",
+                MaxTokens = 10
+            };
+            await CallAsync(testRequest, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
-    private static string ResolveToolName(object source, string fallback = "unknown")
-    {
-        var name = source.GetType().GetProperty("Name")?.GetValue(source) as string;
-        return string.IsNullOrWhiteSpace(name) ? fallback : name!;
-    }
-
-    private static string? ExtractActionCardFromToolResult(object? result)
-    {
-        if (result is null)
-        {
-            return null;
-        }
-
-        var type = result.GetType();
-        var statusProp = type.GetProperty("Status");
-        var actionCardProp = type.GetProperty("ActionCardJson");
-
-        if (statusProp is null || actionCardProp is null)
-        {
-            return null;
-        }
-
-        var status = statusProp.GetValue(result)?.ToString();
-        if (!string.Equals(status, "PENDING_CONFIRMATION", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        return actionCardProp.GetValue(result)?.ToString();
-    }
+    public Task<IEnumerable<string>> GetModelsAsync(CancellationToken cancellationToken = default)
+        => GetModelsCoreAsync(cancellationToken);
 }
