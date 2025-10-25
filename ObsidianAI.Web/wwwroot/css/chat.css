@@ -165,6 +165,37 @@ body {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
+.provider-select {
+    background: #ffffff;
+    border: 1px solid #d0d5dd;
+    color: #374151;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+    min-width: 120px;
+}
+
+.provider-select:hover {
+    background: #f9fafb;
+    border-color: #9ca3af;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.provider-select:focus {
+    outline: none;
+    border-color: #4a7c9d;
+    box-shadow: 0 0 0 3px rgba(74, 124, 157, 0.1);
+}
+
+.provider-select option {
+    background: #ffffff;
+    color: #374151;
+    padding: 8px 12px;
+}
+
 .chat-area {
     flex: 1;
     overflow-y: auto;
@@ -1461,6 +1492,12 @@ body {
     .btn-icon {
         padding: 6px 10px;
         font-size: 13px;
+    }
+
+    .provider-select {
+        padding: 6px 10px;
+        font-size: 13px;
+        min-width: 100px;
     }
 
     .conversation-title {
