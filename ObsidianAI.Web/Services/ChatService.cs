@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using ObsidianAI.Domain.Ports;
+using ObsidianAI.Infrastructure.Configuration;
 using ObsidianAI.Web.Models;
 
 namespace ObsidianAI.Web.Services;
@@ -11,12 +13,14 @@ namespace ObsidianAI.Web.Services;
 public class ChatService : IChatService
 {
     private readonly HttpClient _httpClient;
-    private readonly ILlmProviderRuntimeStore _runtimeStore;
+    private readonly IOptions<AppSettings> _appSettings;
+    private readonly IAIAgentFactory _agentFactory;
 
-    public ChatService(HttpClient httpClient, ILlmProviderRuntimeStore runtimeStore)
+    public ChatService(HttpClient httpClient, IOptions<AppSettings> appSettings, IAIAgentFactory agentFactory)
     {
         _httpClient = httpClient;
-        _runtimeStore = runtimeStore;
+        _appSettings = appSettings;
+        _agentFactory = agentFactory;
     }
 
     public Task<IEnumerable<QuickAction>> GetQuickActionsAsync()
@@ -31,170 +35,81 @@ public class ChatService : IChatService
         return Task.FromResult<IEnumerable<QuickAction>>(actions);
     }
 
-    public Task<string> GetLlmProviderAsync() => Task.FromResult(_runtimeStore.CurrentProvider);
+    public Task<string> GetLlmProviderAsync() => Task.FromResult(_appSettings.Value.LLM.Provider ?? "LMStudio");
 
     public Task<ProviderSwitchResult> SwitchLlmProviderAsync(string providerName)
     {
-        if (string.IsNullOrWhiteSpace(providerName))
-        {
-            var failure = new ProviderSwitchResult(false, _runtimeStore.CurrentProvider, _runtimeStore.CurrentModel, "Provider name is required.");
-            return Task.FromResult(failure);
-        }
-
-        if (_runtimeStore.TrySwitchProvider(providerName, out var model, out var error))
-        {
-            var success = new ProviderSwitchResult(true, _runtimeStore.CurrentProvider, model, null);
-            return Task.FromResult(success);
-        }
-
-        var result = new ProviderSwitchResult(false, _runtimeStore.CurrentProvider, _runtimeStore.CurrentModel, error ?? "Failed to switch provider.");
-        return Task.FromResult(result);
+        // For minimal version, just return success with the requested provider
+        var success = new ProviderSwitchResult(true, providerName, _agentFactory.GetModelName(), null);
+        return Task.FromResult(success);
     }
 
-    public async Task<Guid> CreateConversationAsync()
+    public Task<Guid> CreateConversationAsync()
     {
-        var request = new { Title = "New Conversation", UserId = (string?)null };
-        var response = await _httpClient.PostAsJsonAsync("/conversations", request);
-        response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<JsonElement>();
-        return result.GetProperty("id").GetGuid();
+        return Task.FromResult(Guid.NewGuid());
     }
 
-    public async Task<IEnumerable<ConversationSummary>> ListConversationsAsync()
+    public Task<IEnumerable<ConversationSummary>> ListConversationsAsync()
     {
-        var summaries = await _httpClient.GetFromJsonAsync<List<ConversationSummary>>("/conversations");
-        return summaries ?? new List<ConversationSummary>();
+        return Task.FromResult<IEnumerable<ConversationSummary>>(new List<ConversationSummary>());
     }
 
-    public async Task<ConversationDetail> LoadConversationAsync(Guid conversationId)
+    public Task<ConversationDetail> LoadConversationAsync(Guid conversationId)
     {
-        var detail = await _httpClient.GetFromJsonAsync<ConversationDetail>($"/conversations/{conversationId}");
-        return detail ?? new ConversationDetail(
+        var detail = new ConversationDetail(
             conversationId,
-            "Untitled",
+            "Chat",
             DateTime.UtcNow,
             DateTime.UtcNow,
             false,
-            "Unknown",
-            "Unknown",
+            _appSettings.Value.LLM.Provider ?? "LMStudio",
+            _agentFactory.GetModelName(),
             new List<ChatMessage>());
+        return Task.FromResult(detail);
     }
 
-    public async Task DeleteConversationAsync(Guid conversationId)
+    public Task DeleteConversationAsync(Guid conversationId)
     {
-        var response = await _httpClient.DeleteAsync($"/conversations/{conversationId}");
-        response.EnsureSuccessStatusCode();
+        // No-op for minimal version
+        return Task.CompletedTask;
     }
 
-    public async Task<ConversationMetadata> ArchiveConversationAsync(Guid conversationId)
+    public Task<ConversationMetadata> ArchiveConversationAsync(Guid conversationId)
     {
-        var response = await _httpClient.PatchAsJsonAsync($"/conversations/{conversationId}", new { status = "archived" });
-        response.EnsureSuccessStatusCode();
-        var metadata = await response.Content.ReadFromJsonAsync<ConversationMetadata>();
-        return metadata ?? new ConversationMetadata(
+        var metadata = new ConversationMetadata(
             conversationId,
             "Archived",
             DateTime.UtcNow,
             DateTime.UtcNow,
             true,
-            "Unknown",
-            "Unknown",
+            _appSettings.Value.LLM.Provider ?? "LMStudio",
+            _agentFactory.GetModelName(),
             0);
+        return Task.FromResult(metadata);
     }
 
-    public async Task<ConversationMetadata> UpdateConversationAsync(Guid conversationId, string? title, string? status)
+    public Task<ConversationMetadata> UpdateConversationAsync(Guid conversationId, string? title, string? status)
     {
-        var payload = new Dictionary<string, object?>();
-        if (title != null) payload["title"] = title;
-        if (status != null) payload["status"] = status;
-
-        var response = await _httpClient.PatchAsJsonAsync($"/conversations/{conversationId}", payload);
-        response.EnsureSuccessStatusCode();
-        var metadata = await response.Content.ReadFromJsonAsync<ConversationMetadata>();
-        return metadata ?? new ConversationMetadata(
+        var metadata = new ConversationMetadata(
             conversationId,
             title ?? "Updated",
             DateTime.UtcNow,
             DateTime.UtcNow,
             false,
-            "Unknown",
-            "Unknown",
+            _appSettings.Value.LLM.Provider ?? "LMStudio",
+            _agentFactory.GetModelName(),
             0);
+        return Task.FromResult(metadata);
     }
 
-    public async Task<string> ExportConversationAsync(Guid conversationId)
+    public Task<string> ExportConversationAsync(Guid conversationId)
     {
-        var response = await _httpClient.GetAsync($"/conversations/{conversationId}/export");
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
+        return Task.FromResult("{\"messages\": []}");
     }
 
-    public async Task<ModifyResponse> ModifyAsync(ModifyRequest request)
+    public Task UpdateMessageArtifactsAsync(Guid messageId, ArtifactUpdateRequest update)
     {
-        var response = await _httpClient.PostAsJsonAsync("/vault/modify", request);
-        response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<ModifyResponse>();
-        return result ?? new ModifyResponse { Success = false, Message = "No response" };
-    }
-
-    public async Task<ReorganizeResponse> ReorganizeAsync(ReorganizeRequest request)
-    {
-        var response = await _httpClient.PostAsJsonAsync("/vault/reorganize", request);
-        response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<ReorganizeResponse>();
-        return result ?? new ReorganizeResponse { Success = false, Message = "No response" };
-    }
-
-    public async Task UpdateMessageArtifactsAsync(Guid messageId, ArtifactUpdateRequest update)
-    {
-        var response = await _httpClient.PatchAsJsonAsync($"/messages/{messageId}/artifacts", update);
-        response.EnsureSuccessStatusCode();
-    }
-
-    public async Task<VaultBrowserResponse> BrowseVaultAsync(string? path = null)
-    {
-        var queryString = string.IsNullOrEmpty(path) ? "" : $"?path={Uri.EscapeDataString(path)}";
-        var response = await _httpClient.GetFromJsonAsync<JsonElement>($"/vault/browse{queryString}");
-        var itemsArray = response.GetProperty("items");
-        var items = new List<VaultItemData>();
-        
-        foreach (var item in itemsArray.EnumerateArray())
-        {
-            var typeString = item.GetProperty("type").GetString() ?? "File";
-            var itemType = Enum.TryParse<VaultItemType>(typeString, ignoreCase: true, out var parsedType) 
-                ? parsedType 
-                : VaultItemType.File;
-            
-            // Handle nullable size property
-            long? sizeValue = null;
-            if (item.TryGetProperty("size", out var sizeElement) && sizeElement.ValueKind == JsonValueKind.Number)
-            {
-                sizeValue = sizeElement.GetInt64();
-            }
-            
-            // Handle nullable lastModified property
-            DateTime? lastModifiedValue = null;
-            if (item.TryGetProperty("lastModified", out var lmElement) && lmElement.ValueKind == JsonValueKind.String)
-            {
-                lastModifiedValue = lmElement.GetDateTime();
-            }
-            
-            items.Add(new VaultItemData
-            {
-                Name = item.GetProperty("name").GetString() ?? "",
-                Path = item.GetProperty("path").GetString() ?? "",
-                Type = itemType,
-                Extension = item.TryGetProperty("extension", out var ext) && ext.ValueKind == JsonValueKind.String ? ext.GetString() : null,
-                Size = sizeValue,
-                LastModified = lastModifiedValue,
-                Icon = itemType == VaultItemType.Folder ? "📁" : "📄"
-            });
-        }
-        
-        return new VaultBrowserResponse
-        {
-            Items = items,
-            CurrentPath = response.GetProperty("currentPath").GetString() ?? "/"
-        };
+        // No-op for minimal version
+        return Task.CompletedTask;
     }
 }

@@ -1,7 +1,6 @@
 namespace ObsidianAI.Application.DI
 {
     using Microsoft.Extensions.DependencyInjection;
-    using ObsidianAI.Application.Services;
     using ObsidianAI.Application.UseCases;
 
     /// <summary>
@@ -16,27 +15,7 @@ namespace ObsidianAI.Application.DI
         /// <returns>The service collection with added services.</returns>
         public static IServiceCollection AddObsidianApplication(this IServiceCollection services)
         {
-            services.AddSingleton<ObsidianAI.Domain.Services.IFileOperationExtractor, RegexFileOperationExtractor>();
-            services.AddSingleton<ObsidianAI.Domain.Services.IVaultPathNormalizer, BasicVaultPathNormalizer>();
-            services.AddSingleton<IVaultIndexCache, InMemoryVaultIndexCache>();
-            services.AddSingleton<IMcpToolCatalog, McpToolCatalog>();
-            services.AddSingleton<IVaultPathResolver, VaultPathResolver>();
-
-            services.AddScoped<CreateConversationUseCase>();
-            services.AddScoped<LoadConversationUseCase>();
-            services.AddScoped<ListConversationsUseCase>();
-            services.AddScoped<ArchiveConversationUseCase>();
-            services.AddScoped<UpdateConversationUseCase>();
-            services.AddScoped<DeleteConversationUseCase>();
-
-            services.AddScoped<StartChatUseCase>();
             services.AddScoped<StreamChatUseCase>();
-            services.AddScoped<ModifyVaultUseCase>();
-            services.AddScoped<SearchVaultUseCase>();
-            services.AddScoped<ListVaultContentsUseCase>();
-            services.AddScoped<ReadFileUseCase>();
-            services.AddScoped<UpdateMessageArtifactsUseCase>();
-            services.AddScoped<AddAttachmentToConversationUseCase>();
             return services;
         }
     }

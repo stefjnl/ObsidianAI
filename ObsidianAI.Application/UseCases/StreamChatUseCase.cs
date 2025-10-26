@@ -8,57 +8,25 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ObsidianAI.Application.Contracts;
-using ObsidianAI.Application.Services;
-using ObsidianAI.Domain.Entities;
 using ObsidianAI.Domain.Models;
 using ObsidianAI.Domain.Ports;
 
 namespace ObsidianAI.Application.UseCases;
 
 /// <summary>
-/// Use case for streaming chat interactions with an AI agent while persisting conversation history.
-/// 
-/// Responsibilities:
-/// - Orchestrate conversation creation/ensuring
-/// - Agent creation and thread management
-/// - Message persistence (user and assistant)
-/// - Conversation metadata updates
-/// - File operation resolution
-/// 
-/// TODO: Refactor to separate use cases for better SRP:
-/// - ConversationManagementUseCase
-/// - MessagePersistenceUseCase
-/// - AgentInteractionUseCase
+/// Use case for streaming chat interactions with an AI agent.
 /// </summary>
 public class StreamChatUseCase
 {
     private readonly IAIAgentFactory _agentFactory;
-    private readonly IAgentThreadProvider _threadProvider;
-    private readonly Domain.Services.IFileOperationExtractor _extractor;
-    private readonly IMcpToolCatalog? _toolCatalog;
-    private readonly IVaultPathResolver _vaultPathResolver;
-    private readonly IConversationRepository _conversationRepository;
-    private readonly IMessageRepository _messageRepository;
     private readonly ILogger<StreamChatUseCase> _logger;
 
     public StreamChatUseCase(
         IAIAgentFactory agentFactory,
-        IAgentThreadProvider threadProvider,
-        Domain.Services.IFileOperationExtractor extractor,
-        IConversationRepository conversationRepository,
-    IMessageRepository messageRepository,
-    IVaultPathResolver vaultPathResolver,
-    IMcpToolCatalog toolCatalog,
-    ILogger<StreamChatUseCase>? logger = null)
+        ILogger<StreamChatUseCase>? logger = null)
     {
         _agentFactory = agentFactory;
-        _threadProvider = threadProvider ?? throw new ArgumentNullException(nameof(threadProvider));
-        _extractor = extractor;
-        _conversationRepository = conversationRepository;
-        _messageRepository = messageRepository;
-        _vaultPathResolver = vaultPathResolver ?? throw new ArgumentNullException(nameof(vaultPathResolver));
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<StreamChatUseCase>.Instance;
-    _toolCatalog = toolCatalog ?? throw new ArgumentNullException(nameof(toolCatalog));
     }
 
     /// <summary>
@@ -82,40 +50,20 @@ public class StreamChatUseCase
             throw new ArgumentException("Message cannot be null or whitespace.", nameof(input));
         }
 
-        var conversation = await EnsureConversationAsync(persistenceContext, input.Message, ct).ConfigureAwait(false);
+        var conversationId = persistenceContext.ConversationId ?? Guid.NewGuid();
 
-        List<object>? tools = null;
-        if (_toolCatalog is not null)
-        {
-            var snapshot = await _toolCatalog.GetToolsAsync(ct).ConfigureAwait(false);
-            if (snapshot.Tools.Count > 0)
-            {
-                tools = snapshot.Tools.ToList();
-                _logger.LogInformation(
-                    "📦 Loaded {ObsidianCount} Obsidian + {MicrosoftLearnCount} Microsoft Learn tools (expires {ExpiresAt:O})",
-                    snapshot.ObsidianToolCount,
-                    snapshot.MicrosoftLearnToolCount,
-                    snapshot.ExpiresAt);
-            }
-        }
-
-        var agent = await _agentFactory.CreateAgentAsync(instructions, tools, _threadProvider, ct).ConfigureAwait(false);
-        var threadId = await EnsureThreadAsync(conversation, persistenceContext.ThreadId, agent, ct).ConfigureAwait(false);
-        
-        // Format message with attachments if present
-        var messageToSend = FormatMessageWithAttachments(input);
-        var userMessage = await PersistUserMessageAsync(conversation.Id, input.Message, ct).ConfigureAwait(false);
+        var agent = await _agentFactory.CreateAgentAsync(instructions, null, null, ct).ConfigureAwait(false);
 
         var initialMetadataPayload = JsonSerializer.Serialize(new
         {
-            conversationId = conversation.Id,
-            userMessageId = userMessage.Id
+            conversationId = conversationId,
+            userMessageId = Guid.NewGuid()
         });
         yield return ChatStreamEvent.MetadataEvent(initialMetadataPayload);
 
         var responseBuilder = new StringBuilder();
 
-        await foreach (var evt in agent.StreamAsync(messageToSend, threadId, ct).ConfigureAwait(false))
+        await foreach (var evt in agent.StreamAsync(input.Message, null, ct).ConfigureAwait(false))
         {
             if (evt.Kind == ChatStreamEventKind.Text && !string.IsNullOrEmpty(evt.Text))
             {
@@ -126,223 +74,14 @@ public class StreamChatUseCase
         }
 
         var finalResponse = responseBuilder.ToString();
-        var fileOperation = _extractor.Extract(finalResponse);
-        var resolvedOperation = await ResolveFileOperationAsync(fileOperation, ct).ConfigureAwait(false);
-        var assistantMessage = await PersistAssistantMessageAsync(conversation.Id, finalResponse, resolvedOperation, ct).ConfigureAwait(false);
-
-        await UpdateConversationMetadataAsync(conversation.Id, persistenceContext.TitleSource ?? input.Message, ct).ConfigureAwait(false);
 
         var metadataPayload = JsonSerializer.Serialize(new
         {
-            conversationId = conversation.Id,
-            userMessageId = userMessage.Id,
-            assistantMessageId = assistantMessage.Id,
-            fileOperation = resolvedOperation == null ? null : new { resolvedOperation.Action, resolvedOperation.FilePath }
+            conversationId = conversationId,
+            userMessageId = Guid.NewGuid(),
+            assistantMessageId = Guid.NewGuid()
         });
 
         yield return ChatStreamEvent.MetadataEvent(metadataPayload);
     }
-
-    private async Task<string> EnsureThreadAsync(Conversation conversation, string? persistedThreadId, IChatAgent agent, CancellationToken ct)
-    {
-        if (conversation == null)
-        {
-            throw new ArgumentNullException(nameof(conversation));
-        }
-
-        var candidateId = !string.IsNullOrEmpty(conversation.ThreadId)
-            ? conversation.ThreadId
-            : persistedThreadId;
-
-        if (!string.IsNullOrEmpty(candidateId))
-        {
-            var existing = await _threadProvider.GetThreadAsync(candidateId, ct).ConfigureAwait(false);
-            if (existing is not null)
-            {
-                if (!string.Equals(conversation.ThreadId, candidateId, StringComparison.Ordinal))
-                {
-                    conversation.ThreadId = candidateId;
-                    await _conversationRepository.UpdateAsync(conversation, ct).ConfigureAwait(false);
-                }
-
-                return candidateId;
-            }
-        }
-
-        var thread = await agent.CreateThreadAsync(ct).ConfigureAwait(false);
-        var threadId = await _threadProvider.RegisterThreadAsync(thread, ct).ConfigureAwait(false);
-        conversation.ThreadId = threadId;
-        await _conversationRepository.UpdateAsync(conversation, ct).ConfigureAwait(false);
-        return threadId;
-    }
-
-    private async Task<Domain.Models.FileOperation?> ResolveFileOperationAsync(Domain.Models.FileOperation? fileOperation, CancellationToken ct)
-    {
-        if (fileOperation is null || string.IsNullOrWhiteSpace(fileOperation.FilePath))
-        {
-            return fileOperation;
-        }
-
-        var resolvedPath = await _vaultPathResolver.ResolveAsync(fileOperation.FilePath, ct).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(resolvedPath) || string.Equals(fileOperation.FilePath, resolvedPath, StringComparison.Ordinal))
-        {
-            return fileOperation;
-        }
-
-        _logger.LogDebug("Resolved vault path '{Original}' to '{Resolved}'", fileOperation.FilePath, resolvedPath);
-        return fileOperation with { FilePath = resolvedPath };
-    }
-
-    private async Task<Conversation> EnsureConversationAsync(ConversationPersistenceContext context, string titleSource, CancellationToken ct)
-    {
-        Conversation? conversation = null;
-        if (context.ConversationId.HasValue)
-        {
-            conversation = await _conversationRepository.GetByIdAsync(context.ConversationId.Value, includeMessages: false, ct).ConfigureAwait(false);
-        }
-
-        if (conversation != null)
-        {
-            return conversation;
-        }
-
-        var conversationId = context.ConversationId ?? Guid.NewGuid();
-        conversation = new Conversation
-        {
-            Id = conversationId,
-            UserId = context.UserId,
-            Title = CreateTitle(titleSource),
-            Provider = context.Provider,
-            ModelName = context.ModelName,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            IsArchived = false
-        };
-
-        await _conversationRepository.CreateAsync(conversation, ct).ConfigureAwait(false);
-        return conversation;
-    }
-
-    private async Task<Message> PersistUserMessageAsync(Guid conversationId, string content, CancellationToken ct)
-    {
-        var message = new Message
-        {
-            Id = Guid.NewGuid(),
-            ConversationId = conversationId,
-            Role = MessageRole.User,
-            Content = content,
-            Timestamp = DateTime.UtcNow,
-            IsProcessing = false
-        };
-
-        try
-        {
-            await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to persist user message {MessageId}", message.Id);
-            throw new ApplicationException("Failed to persist user message.", ex);
-        }
-        return message;
-    }
-
-    private async Task<Message> PersistAssistantMessageAsync(Guid conversationId, string content, Domain.Models.FileOperation? fileOperation, CancellationToken ct)
-    {
-        var message = new Message
-        {
-            Id = Guid.NewGuid(),
-            ConversationId = conversationId,
-            Role = MessageRole.Assistant,
-            Content = content,
-            Timestamp = DateTime.UtcNow,
-            IsProcessing = false
-        };
-
-        if (fileOperation != null)
-        {
-            message.FileOperation = new FileOperationRecord
-            {
-                Id = Guid.NewGuid(),
-                MessageId = message.Id,
-                Action = fileOperation.Action,
-                FilePath = fileOperation.FilePath,
-                Timestamp = DateTime.UtcNow
-            };
-        }
-
-        try
-        {
-            await _messageRepository.AddAsync(message, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to persist assistant message {MessageId}", message.Id);
-            throw new ApplicationException("Failed to persist assistant message.", ex);
-        }
-        return message;
-    }
-
-    private async Task UpdateConversationMetadataAsync(Guid conversationId, string titleSource, CancellationToken ct)
-    {
-        var conversation = await _conversationRepository.GetByIdAsync(conversationId, includeMessages: false, ct).ConfigureAwait(false);
-        if (conversation == null)
-        {
-            return;
-        }
-
-        conversation.UpdatedAt = DateTime.UtcNow;
-        if (string.IsNullOrWhiteSpace(conversation.Title) || conversation.Title.Equals("New Conversation", StringComparison.Ordinal))
-        {
-            conversation.Title = CreateTitle(titleSource);
-        }
-
-        await _conversationRepository.UpdateAsync(conversation, ct).ConfigureAwait(false);
-    }
-
-    private static string CreateTitle(string? titleSource)
-    {
-        if (string.IsNullOrWhiteSpace(titleSource))
-        {
-            return "New Conversation";
-        }
-
-        var trimmed = titleSource.Trim();
-        const int MaxLength = 80;
-        if (trimmed.Length <= MaxLength)
-        {
-            return trimmed;
-        }
-
-        return trimmed.Substring(0, MaxLength) + "…";
-    }
-
-    private static string FormatMessageWithAttachments(ChatInput input)
-    {
-        if (input.Attachments == null || input.Attachments.Count == 0)
-        {
-            return input.Message;
-        }
-
-        var builder = new StringBuilder();
-        
-        // Add attachment context at the beginning
-        builder.AppendLine("[ATTACHED FILES - These files are provided as context for analysis]");
-        builder.AppendLine();
-        
-        foreach (var attachment in input.Attachments)
-        {
-            builder.AppendLine($"File: {attachment.Filename} ({attachment.FileType})");
-            builder.AppendLine("--- BEGIN FILE CONTENT ---");
-            builder.AppendLine(attachment.Content);
-            builder.AppendLine("--- END FILE CONTENT ---");
-            builder.AppendLine();
-        }
-        
-        builder.AppendLine("[USER MESSAGE]");
-        builder.Append(input.Message);
-        
-        return builder.ToString();
-    }
-
 }

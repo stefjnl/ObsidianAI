@@ -16,9 +16,6 @@ public interface IChatService
     Task<ConversationMetadata> ArchiveConversationAsync(Guid conversationId);
     Task<ConversationMetadata> UpdateConversationAsync(Guid conversationId, string? title, string? status);
     Task<string> ExportConversationAsync(Guid conversationId);
-    Task<ModifyResponse> ModifyAsync(ModifyRequest request);
-    Task<ReorganizeResponse> ReorganizeAsync(ReorganizeRequest request);
     Task UpdateMessageArtifactsAsync(Guid messageId, ArtifactUpdateRequest update);
-    Task<VaultBrowserResponse> BrowseVaultAsync(string? path = null);
     Task<ProviderSwitchResult> SwitchLlmProviderAsync(string providerName);
 }

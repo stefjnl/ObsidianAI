@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace ObsidianAI.Web.Models
@@ -9,15 +8,15 @@ namespace ObsidianAI.Web.Models
     /// </summary>
     public record ChatMessage
     {
-    /// <summary>
-    /// Unique identifier assigned by the server once persisted.
-    /// </summary>
-    public string Id { get; init; } = string.Empty;
+        /// <summary>
+        /// Unique identifier assigned by the server once persisted.
+        /// </summary>
+        public string Id { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Client-generated identifier used for optimistic UI updates prior to persistence.
-    /// </summary>
-    public string ClientId { get; init; } = Guid.NewGuid().ToString();
+        /// <summary>
+        /// Client-generated identifier used for optimistic UI updates prior to persistence.
+        /// </summary>
+        public string ClientId { get; init; } = Guid.NewGuid().ToString();
         
         /// <summary>
         /// The content of the message
@@ -35,44 +34,6 @@ namespace ObsidianAI.Web.Models
         /// Timestamp when the message was created
         /// </summary>
         public DateTime Timestamp { get; init; } = DateTime.UtcNow;
-        
-        /// <summary>
-        /// Optional action card data associated with this message
-        /// </summary>
-    public ActionCardData? ActionCard { get; init; }
-        
-        /// <summary>
-        /// Optional file operation data associated with this message
-        /// </summary>
-        /// <remarks>
-        /// When present, the chat UI will render a FileOperationResult component for this message.
-        /// </remarks>
-        public FileOperationData? FileOperation { get; init; }
-        
-        /// <summary>
-        /// Optional search results associated with this message
-        /// </summary>
-    public List<SearchResultData> SearchResults { get; init; } = new();
-
-    /// <summary>
-    /// Tools invoked while generating this message.
-    /// </summary>
-    public List<string> ToolsUsed { get; init; } = new();
-
-    /// <summary>
-    /// Reference URLs associated with this message (for example, Microsoft Learn docs).
-    /// </summary>
-    public List<string> Sources { get; init; } = new();
-
-    /// <summary>
-    /// Token usage metrics reported for this message, when available.
-    /// </summary>
-    public TokenUsageSummary? Usage { get; init; }
-
-    /// <summary>
-    /// Running total of tokens consumed in the conversation up to and including this message.
-    /// </summary>
-    public long RunningTokenTotal { get; init; }
         
         /// <summary>
         /// Whether the message is currently being processed
@@ -105,9 +66,6 @@ namespace ObsidianAI.Web.Models
     public enum ProcessingType
     {
         None,
-        Searching,
-        Writing,
-        Reorganizing,
         Thinking
     }
 }

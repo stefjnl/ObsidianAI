@@ -1,19 +1,11 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ObsidianAI.Application.Services;
 using ObsidianAI.Domain.Ports;
-using ObsidianAI.Domain.Services;
 using ObsidianAI.Infrastructure.Configuration;
-using ObsidianAI.Infrastructure.Data;
-using ObsidianAI.Infrastructure.Data.Repositories;
-using ObsidianAI.Infrastructure.Agents;
 using ObsidianAI.Infrastructure.LLM;
-using ObsidianAI.Infrastructure.Middleware;
-using ObsidianAI.Infrastructure.Services;
-using ObsidianAI.Infrastructure.Vault;
 
 namespace ObsidianAI.Infrastructure.DI;
 
@@ -32,49 +24,13 @@ public static class ServiceCollectionExtensions
     {
         services.Configure<AppSettings>(configuration);
 
-        var connectionString = configuration.GetConnectionString("ObsidianAI") ?? "Data Source=obsidianai.db";
-        services.AddDbContext<ObsidianAIDbContext>(options => options.UseSqlite(connectionString));
-
-        services.AddSingleton<ILlmProviderRuntimeStore, LlmProviderRuntimeStore>();
-
-        services.AddScoped<IConversationRepository, ConversationRepository>();
-        services.AddScoped<IMessageRepository, MessageRepository>();
-        services.AddScoped<IAttachmentRepository, AttachmentRepository>();
-        services.AddScoped<IAttachmentValidator, AttachmentValidator>();
-
-        // Register agent state service
-        services.AddSingleton<IAgentStateService, AgentStateService>();
-
-        // Register reflection services
-        services.AddSingleton<ReflectionPromptBuilder>();
-        services.AddSingleton<IReflectionService, OpenRouterReflectionService>();
-
-        // Register reflection middleware
-        services.AddSingleton<IFunctionMiddleware, ReflectionFunctionMiddleware>();
-
-        // Register agent factory with middleware injection
+        // Register agent factory
         services.AddSingleton<IAIAgentFactory>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<AppSettings>>();
             var configuration = sp.GetRequiredService<IConfiguration>();
-            var middlewares = sp.GetServices<IFunctionMiddleware>();
             var logger = sp.GetRequiredService<ILogger<ConfiguredAIAgentFactory>>();
-            var runtimeStore = sp.GetRequiredService<ILlmProviderRuntimeStore>();
-            return new ConfiguredAIAgentFactory(options, configuration, middlewares, logger, runtimeStore);
-        });
-
-        services.AddSingleton<IAgentThreadProvider, InMemoryAgentThreadProvider>();
-        services.AddSingleton<IVaultToolExecutor>(sp =>
-        {
-            var logger = sp.GetRequiredService<ILogger<McpVaultToolExecutor>>();
-            var provider = sp.GetService<IMcpClientProvider>();
-            if (provider == null)
-            {
-                logger.LogWarning("MCP client provider is not available. Using null vault tool executor - vault operations will be disabled.");
-                return new NullVaultToolExecutor();
-            }
-
-            return new McpVaultToolExecutor(provider, logger);
+            return new ConfiguredAIAgentFactory(options, configuration, logger);
         });
 
         return services;

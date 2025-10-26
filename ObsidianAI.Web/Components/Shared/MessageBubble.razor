@@ -1,125 +1,24 @@
 @using ObsidianAI.Web.Models
 @using System
-@using System.Globalization
-@using System.Linq
 
 <div class="message @(Message.Sender == MessageSender.User ? "user" : "")">
     <div class="message-avatar" aria-hidden="true">
         @(Message.Sender == MessageSender.User ? "👤" : "🤖")
     </div>
     <div class="message-content">
-        @if (Message.Sender == MessageSender.AI)
-        {
-            <MarkdownContent Content="@Message.Content" />
-        }
-        else
-        {
-            @Message.Content
-        }
-
-        @if (ShouldShowMicrosoftLearnBadge(Message))
-        {
-            <span class="tool-badge microsoft-learn" title="Microsoft Learn tools powered this response">📚 Microsoft Learn</span>
-        }
-
-        @if (Message.Sources is { Count: > 0 })
-        {
-            <div class="source-links" aria-label="Sources for this response">
-                <span class="source-links-title">Sources</span>
-                @foreach (var source in Message.Sources)
-                {
-                    <a class="source-link" href="@source" target="_blank" rel="noopener noreferrer">@FormatSourceLabel(source)</a>
-                }
-            </div>
-        }
+        @Message.Content
         
         @if (Message.IsProcessing)
         {
             <div class="status-indicator">
                 <div class="spinner"></div>
-                @GetProcessingText(Message.ProcessingType)
+                Thinking...
             </div>
         }
-        
-        @if (Message.ActionCard != null)
-        {
-            <ActionCard Card="Message.ActionCard" OnConfirmed="OnActionConfirmed" OnCancelled="OnActionCancelled" OnEdit="OnActionEdit" />
-        }
-        
-        @if (Message.SearchResults.Any())
-        {
-            @foreach (var result in Message.SearchResults)
-            {
-                <SearchResult Result="result" />
-            }
-        }
-        
-        @if (Message.FileOperation != null)
-        {
-            <FileOperationResult Result="Message.FileOperation" />
-        }
-
-        @if (Message.Usage is not null)
-        {
-            <div class="usage-summary" aria-label="Token usage for this response">
-                🔢 @(Message.Usage?.FormatForDisplay() ?? string.Empty)
-            </div>
-        }
-
-        <div class="token-counter" aria-label="Running token total">
-            <span class="token-counter__label">Total tokens:</span>
-            <span class="token-counter__value">@FormatRunningTotal(Message.RunningTokenTotal)</span>
-        </div>
     </div>
 </div>
 
 @code {
     [Parameter]
     public ChatMessage Message { get; set; } = default!;
-    
-    [Parameter]
-    public EventCallback<string> OnActionConfirmed { get; set; }
-    
-    [Parameter]
-    public EventCallback<string> OnActionCancelled { get; set; }
-    
-    [Parameter]
-    public EventCallback<string> OnActionEdit { get; set; }
-    
-    private string GetProcessingText(ProcessingType processingType)
-    {
-        return processingType switch
-        {
-            ProcessingType.Searching => "🔍 Searching...",
-            ProcessingType.Writing => "✏️ Writing...",
-            ProcessingType.Reorganizing => "🔄 Reorganizing...",
-            ProcessingType.Thinking => "🤔 Thinking...",
-            _ => "Processing..."
-        };
-    }
-
-    private static bool ShouldShowMicrosoftLearnBadge(ChatMessage message) =>
-        message.Sender == MessageSender.AI && message.ToolsUsed.Any(IsMicrosoftLearnTool);
-
-    private static bool IsMicrosoftLearnTool(string toolName) =>
-        !string.IsNullOrWhiteSpace(toolName) && toolName.StartsWith("microsoft_", StringComparison.OrdinalIgnoreCase);
-
-    private static string FormatSourceLabel(string url)
-    {
-        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
-        {
-            var host = uri.Host.Replace("www.", string.Empty, StringComparison.OrdinalIgnoreCase);
-            var path = uri.AbsolutePath.Trim('/');
-            if (string.IsNullOrEmpty(path))
-            {
-                return host;
-            }
-
-            return $"{host}/{path}";
-        }
-
-        return url;
-    }
-
-    private static string FormatRunningTotal(long total) => total.ToString("N0", CultureInfo.InvariantCulture);
 }

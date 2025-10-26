@@ -6,8 +6,7 @@
     {
         @foreach (var message in Messages)
         {
-            <MessageBubble Message="@message" OnActionConfirmed="OnActionConfirmed"
-                OnActionCancelled="OnActionCancelled" OnActionEdit="OnActionEdit" />
+            <MessageBubble Message="@message" />
         }
     }
     else
@@ -21,13 +20,4 @@
 @code {
     [Parameter]
     public List<ChatMessage> Messages { get; set; } = new();
-
-    [Parameter]
-    public EventCallback<string> OnActionConfirmed { get; set; }
-
-    [Parameter]
-    public EventCallback<string> OnActionCancelled { get; set; }
-
-    [Parameter]
-    public EventCallback<string> OnActionEdit { get; set; }
 }
