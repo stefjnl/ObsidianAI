@@ -82,7 +82,15 @@ namespace ObsidianAI.Web.Services
                 {
                     Endpoint = new Uri(mcpEndpoint)
                 };
-                var transport = new HttpClientTransport(options);
+
+                var httpClient = new System.Net.Http.HttpClient();
+                var authToken = Environment.GetEnvironmentVariable("MCP_GATEWAY_AUTH_TOKEN");
+                if (!string.IsNullOrEmpty(authToken))
+                {
+                    httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {authToken}");
+                }
+
+                var transport = new HttpClientTransport(options, httpClient);
                 var client = await McpClient.CreateAsync(transport, cancellationToken: cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation("Successfully connected to MCP server at {McpEndpoint}", mcpEndpoint);
                 return client;

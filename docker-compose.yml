@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   web:
     build:
@@ -13,21 +12,19 @@ services:
       LLM__LMStudio__Model: ${LLM__LMStudio__Model}
       LLM__OpenRouter__Endpoint: ${LLM__OpenRouter__Endpoint}
       LLM__OpenRouter__ApiKey: ${LLM__OpenRouter__ApiKey}
+      OpenRouter__ApiKey: ${LLM__OpenRouter__ApiKey}
       LLM__OpenRouter__Model: ${LLM__OpenRouter__Model}
-      LLM__NanoGPT__Endpoint: ${LLM__NanoGPT__Endpoint}
-      LLM__NanoGPT__Model: ${LLM__NanoGPT__Model}
-      MCP_ENDPOINT: http://mcp-gateway:8033/mcp
-      MicrosoftLearnMcp__Endpoint: ${MicrosoftLearnMcp__Endpoint}
+      LLM__NanoGPT__Endpoint: ${LLM__NanoGPT__Endpoint:-}
+      LLM__NanoGPT__Model: ${LLM__NanoGPT__Model:-}
+      MCP_ENDPOINT: http://host.docker.internal:8033/mcp
+      MCP_GATEWAY_AUTH_TOKEN: ${MCP_GATEWAY_AUTH_TOKEN}
+      MicrosoftLearnMcp__Endpoint: ${MicrosoftLearnMcp__Endpoint:-}
+      ApiBaseUrl: http://localhost:8080
     volumes:
       - obsidianai-data:/app/data
     ports:
       - "5244:8080"
-    depends_on:
-      - mcp-gateway
-  mcp-gateway:
-    image: ghcr.io/modelcontextprotocol/gateway:latest
-    command: [ "mcp", "gateway", "run", "--transport", "streaming", "--port", "8033", "--servers", "obsidian" ]
-    ports:
-      - "8033:8033"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 volumes:
   obsidianai-data:

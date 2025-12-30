@@ -147,8 +147,13 @@
 
     private async Task InitializeSignalR()
     {
+        var apiBaseUrl = Configuration["ApiBaseUrl"];
+        var hubUrl = !string.IsNullOrEmpty(apiBaseUrl)
+            ? new Uri(new Uri(apiBaseUrl), "chathub")
+            : NavigationManager.ToAbsoluteUri("/chathub");
+
         hubConnection = new HubConnectionBuilder()
-            .WithUrl(NavigationManager.ToAbsoluteUri("/chathub"))
+            .WithUrl(hubUrl)
             .WithAutomaticReconnect()
             .Build();
 
@@ -1105,7 +1110,7 @@
             Logger?.LogInformation("Confirming server-side ActionCard with reflection key: {ReflectionKey}", reflectionKey);
 
             // Call the new ActionCard confirmation API endpoint
-            var apiUrl = $"http://localhost:5095/actioncards/{reflectionKey}/confirm";
+            var apiUrl = $"/actioncards/{reflectionKey}/confirm";
             var response = await HttpClient.PostAsync(apiUrl, null);
             
             if (response.IsSuccessStatusCode)
@@ -1165,7 +1170,7 @@
             Logger?.LogInformation("Cancelling server-side ActionCard with reflection key: {ReflectionKey}", reflectionKey);
 
             // Call the ActionCard cancellation API endpoint
-            var apiUrl = $"http://localhost:5095/actioncards/{reflectionKey}/cancel";
+            var apiUrl = $"/actioncards/{reflectionKey}/cancel";
             var response = await HttpClient.PostAsync(apiUrl, null);
             
             if (response.IsSuccessStatusCode)

@@ -70,17 +70,26 @@ builder.Services.AddHealthChecks()
 builder.Services.AddScoped<IVaultResizeService, VaultResizeService>();
 
 // Register HTTP client-based services for Blazor components
+// Use environment variable for base URL to support both local and containerized deployments
+var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:8080";
 builder.Services.AddHttpClient<IChatService, ChatService>(client =>
 {
-    client.BaseAddress = new Uri("http://localhost:5244");
+    client.BaseAddress = new Uri(apiBaseUrl);
 });
 builder.Services.AddHttpClient<IVaultService, VaultService>(client =>
 {
-    client.BaseAddress = new Uri("http://localhost:5244");
+    client.BaseAddress = new Uri(apiBaseUrl);
 });
 builder.Services.AddHttpClient("ObsidianAI.Api", client =>
 {
-    client.BaseAddress = new Uri("http://localhost:5244");
+    client.BaseAddress = new Uri(apiBaseUrl);
+});
+
+// Configure default HttpClient for Blazor components
+builder.Services.AddScoped(sp =>
+{
+    var httpClient = new HttpClient { BaseAddress = new Uri(apiBaseUrl) };
+    return httpClient;
 });
 
 // Validate required configuration on startup
