@@ -12,8 +12,16 @@ public class LMStudioSettings
 
     // Backward-compatible properties for existing agents/services
     // Map to new properties to keep a single source of truth
-    public string Endpoint => BaseUrl;
-    public string Model => DefaultModel;
+    public string Endpoint
+    {
+        get => BaseUrl;
+        set => BaseUrl = value;
+    }
+    public string Model 
+    {
+        get => DefaultModel;
+        set => DefaultModel = value;
+    }
 
     // LM Studio often uses a placeholder/local token; keep overridable
     public string ApiKey { get; set; } = "lm-studio";

@@ -12,8 +12,16 @@ public class NanoGptSettings
 
     // Backward-compatible properties for existing agents/services
     // Map to new properties to keep a single source of truth
-    public string Endpoint => BaseUrl;
-    public string Model => DefaultModel;
+    public string Endpoint
+    {
+        get => BaseUrl;
+        set => BaseUrl = value;
+    }
+    public string Model 
+    {
+        get => DefaultModel;
+        set => DefaultModel = value;
+    }
 
     // ApiKey is optionally bound from configuration; user secrets or environment can override
     public string? ApiKey { get; set; } = string.Empty;

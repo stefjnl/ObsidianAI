@@ -6,8 +6,8 @@
         <h1>🧠 Obsidian AI</h1>
         <div class="header-actions">
             <select class="provider-select" @bind="SelectedProvider" @bind:event="onchange">
-                <option value="OpenRouter">OpenRouter</option>
                 <option value="NanoGPT">NanoGPT</option>
+                <option value="OpenRouter">OpenRouter</option>
             </select>
             <button class="btn-icon" type="button" aria-label="Open Vault" @onclick="OnVaultClick">📁 Vault</button>
             <button class="btn-icon" type="button" aria-label="Open Settings" @onclick="OnSettingsClick">⚙️</button>
@@ -84,7 +84,7 @@
     public EventCallback OnHistoryClick { get; set; }
 
     [Parameter]
-    public string CurrentProvider { get; set; } = "OpenRouter";
+    public string CurrentProvider { get; set; } = "NanoGPT";
 
     [Parameter]
     public EventCallback<string> OnProviderChanged { get; set; }
