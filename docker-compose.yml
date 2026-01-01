@@ -15,6 +15,7 @@ services:
       OpenRouter__ApiKey: ${LLM__OpenRouter__ApiKey}
       LLM__OpenRouter__Model: ${LLM__OpenRouter__Model}
       LLM__NanoGPT__Endpoint: ${LLM__NanoGPT__Endpoint:-}
+      NanoGpt__ApiKey: ${LLM__NanoGPT__ApiKey}
       LLM__NanoGPT__Model: ${LLM__NanoGPT__Model:-}
       MCP_ENDPOINT: http://host.docker.internal:8033/mcp
       MCP_GATEWAY_AUTH_TOKEN: ${MCP_GATEWAY_AUTH_TOKEN}
