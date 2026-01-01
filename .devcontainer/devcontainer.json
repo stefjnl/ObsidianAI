@@ -1,0 +1,14 @@
+{
+    "name": "ObsidianAI",
+    "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "workspaceFolder": "/workspace",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "dbaeumer.vscode-eslint"
+            ]
+        }
+    },
+    "postCreateCommand": "npm install && git config --global --add safe.directory ${containerWorkspaceFolder}"
+}

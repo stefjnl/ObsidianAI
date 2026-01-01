@@ -47,7 +47,7 @@ public static class ServiceCollectionExtensions
 
         // Register reflection services
         services.AddSingleton<ReflectionPromptBuilder>();
-        services.AddSingleton<IReflectionService, OpenRouterReflectionService>();
+        services.AddSingleton<IReflectionService, NanoGptReflectionService>();
 
         // Register reflection middleware
         services.AddSingleton<IFunctionMiddleware, ReflectionFunctionMiddleware>();

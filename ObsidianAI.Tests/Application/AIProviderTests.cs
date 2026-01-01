@@ -3,7 +3,6 @@ namespace ObsidianAI.Tests.Application;
 using System.Threading.Tasks;
 using Xunit;
 using NSubstitute;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 using ObsidianAI.Application.Services;
@@ -14,47 +13,38 @@ using ObsidianAI.Domain.Models;
 public class AIProviderTests
 {
     private readonly IAIClientFactory _factoryMock;
-    private readonly IProviderSelectionStrategy _strategyMock;
-    private readonly IMemoryCache _cache;
     private readonly ILogger<AIProvider> _loggerMock;
     private readonly IOptions<AIProviderOptions> _options;
 
     public AIProviderTests()
     {
         _factoryMock = Substitute.For<IAIClientFactory>();
-        _strategyMock = Substitute.For<IProviderSelectionStrategy>();
-        _cache = new MemoryCache(new MemoryCacheOptions());
         _loggerMock = Substitute.For<ILogger<AIProvider>>();
-        
+
         _options = Options.Create(new AIProviderOptions
         {
-            DefaultProvider = "OpenRouter",
-            EnableCaching = false,
-            EnableFallback = false
+            DefaultProvider = "NanoGPT",
+            DefaultModel = "zai-org/glm-4.7"
         });
     }
 
     [Fact]
-    public async Task GenerateContentAsync_ShouldCallSelectedProvider()
+    public async Task GenerateContentAsync_ShouldCallNanoGptProvider()
     {
         // Arrange
         var mockClient = Substitute.For<IAIClient>();
-        mockClient.ProviderName.Returns("OpenRouter");
+        mockClient.ProviderName.Returns("NanoGPT");
         mockClient.CallAsync(Arg.Any<AIRequest>(), Arg.Any<System.Threading.CancellationToken>())
             .Returns(new AIResponse
             {
                 Content = "Test response",
-                ProviderName = "OpenRouter"
+                ProviderName = "NanoGPT"
             });
 
-        _factoryMock.GetClient("OpenRouter").Returns(mockClient);
-        _strategyMock.SelectProviderAsync(null, Arg.Any<System.Threading.CancellationToken>())
-            .Returns("OpenRouter");
+        _factoryMock.GetClient("NanoGPT").Returns(mockClient);
 
         var provider = new AIProvider(
             _factoryMock,
-            _strategyMock,
-            _cache,
             _options,
             _loggerMock);
 
@@ -74,8 +64,6 @@ public class AIProviderTests
         // Arrange
         var provider = new AIProvider(
             _factoryMock,
-            _strategyMock,
-            _cache,
             _options,
             _loggerMock);
 
@@ -90,18 +78,16 @@ public class AIProviderTests
         // Arrange
         var mockClient = Substitute.For<IAIClient>();
         mockClient.IsHealthyAsync(Arg.Any<System.Threading.CancellationToken>()).Returns(true);
-        
-        _factoryMock.GetClient("OpenRouter").Returns(mockClient);
+
+        _factoryMock.GetClient("NanoGPT").Returns(mockClient);
 
         var provider = new AIProvider(
             _factoryMock,
-            _strategyMock,
-            _cache,
             _options,
             _loggerMock);
 
         // Act
-        var result = await provider.IsProviderAvailableAsync("OpenRouter");
+        var result = await provider.IsProviderAvailableAsync("NanoGPT");
 
         // Assert
         Assert.True(result);

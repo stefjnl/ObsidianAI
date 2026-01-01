@@ -6,7 +6,8 @@ using ObsidianAI.Infrastructure.Configuration;
 namespace ObsidianAI.Infrastructure.LLM;
 
 /// <summary>
-/// In-memory store that tracks the active LLM provider and model, allowing runtime switching without restarts.
+/// In-memory store that tracks the active LLM model, allowing runtime switching without restarts.
+/// NanoGPT is the sole provider; only model switching is supported.
 /// </summary>
 public sealed class LlmProviderRuntimeStore : ILlmProviderRuntimeStore
 {
@@ -14,33 +15,20 @@ public sealed class LlmProviderRuntimeStore : ILlmProviderRuntimeStore
     private readonly ILogger<LlmProviderRuntimeStore> _logger;
     private readonly object _sync = new();
 
-    private string _currentProvider;
     private string _currentModel;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="LlmProviderRuntimeStore"/> class.
-    /// </summary>
     public LlmProviderRuntimeStore(IOptionsMonitor<AppSettings> appSettings, ILogger<LlmProviderRuntimeStore> logger)
     {
         _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         var llmSettings = _appSettings.CurrentValue.LLM ?? throw new InvalidOperationException("LLM configuration section is missing.");
-        _currentProvider = NormalizeProviderName(llmSettings.Provider) ?? "LMStudio";
-        _currentModel = ResolveModel(llmSettings, _currentProvider) ?? string.Empty;
+        var nanoGpt = llmSettings.NanoGPT ?? throw new InvalidOperationException("NanoGPT configuration section is missing.");
+        _currentModel = nanoGpt.DefaultModel;
     }
 
     /// <inheritdoc />
-    public string CurrentProvider
-    {
-        get
-        {
-            lock (_sync)
-            {
-                return _currentProvider;
-            }
-        }
-    }
+    public string CurrentProvider => "NanoGPT";
 
     /// <inheritdoc />
     public string CurrentModel
@@ -55,84 +43,70 @@ public sealed class LlmProviderRuntimeStore : ILlmProviderRuntimeStore
     }
 
     /// <inheritdoc />
-    public bool TrySwitchProvider(string providerName, out string model, out string? error)
+    public IReadOnlyList<ModelInfo> GetAvailableModels()
     {
-        model = string.Empty;
+        var nanoGpt = _appSettings.CurrentValue.LLM?.NanoGPT;
+        if (nanoGpt?.Models is null || nanoGpt.Models.Length == 0)
+        {
+            return new List<ModelInfo>();
+        }
+
+        return nanoGpt.Models
+            .Select(m => new ModelInfo(m.Name, m.Identifier))
+            .ToList();
+    }
+
+    /// <inheritdoc />
+    public bool TrySwitchModel(string modelIdentifier, out string? error)
+    {
         error = null;
 
-        if (string.IsNullOrWhiteSpace(providerName))
+        if (string.IsNullOrWhiteSpace(modelIdentifier))
         {
-            error = "Provider name is required.";
+            error = "Model identifier is required.";
             return false;
         }
 
-        var normalized = NormalizeProviderName(providerName);
-        if (normalized is null)
+        var nanoGpt = _appSettings.CurrentValue.LLM?.NanoGPT;
+        if (nanoGpt is null)
         {
-            error = $"Provider '{providerName}' is not supported.";
+            error = "NanoGPT configuration is unavailable.";
             return false;
         }
 
-        var llmSettings = _appSettings.CurrentValue.LLM;
-        if (llmSettings is null)
+        if (!nanoGpt.IsValidModelIdentifier(modelIdentifier))
         {
-            error = "LLM configuration is unavailable.";
-            return false;
-        }
-
-        var resolvedModel = ResolveModel(llmSettings, normalized);
-        if (string.IsNullOrWhiteSpace(resolvedModel))
-        {
-            error = $"No model configured for provider '{normalized}'.";
+            error = $"Model '{modelIdentifier}' is not available. Valid models: {string.Join(", ", nanoGpt.Models.Select(m => m.Identifier))}";
             return false;
         }
 
         lock (_sync)
         {
-            if (string.Equals(_currentProvider, normalized, StringComparison.OrdinalIgnoreCase))
+            if (_currentModel == modelIdentifier)
             {
-                model = _currentModel;
                 return true;
             }
 
-            _currentProvider = normalized;
-            _currentModel = resolvedModel;
+            _currentModel = modelIdentifier;
         }
 
-        model = resolvedModel;
-        _logger.LogInformation("Switched to {Provider}/{Model}", normalized, resolvedModel);
+        _logger.LogInformation("Switched to model {Model}", modelIdentifier);
         return true;
     }
 
-    private static string? NormalizeProviderName(string? providerName)
+    /// <inheritdoc />
+    public bool TrySwitchProvider(string providerName, out string model, out string? error)
     {
-        if (string.IsNullOrWhiteSpace(providerName))
+        // Legacy method - NanoGPT is the only provider
+        // Treat provider switch as a no-op (always NanoGPT)
+        model = CurrentModel;
+        error = null;
+
+        if (!string.Equals(providerName, "NanoGPT", StringComparison.OrdinalIgnoreCase))
         {
-            return null;
+            _logger.LogWarning("Provider '{Provider}' requested but NanoGPT is the only provider. Using NanoGPT.", providerName);
         }
 
-        return providerName.Trim() switch
-        {
-            var value when value.Equals("LMStudio", StringComparison.OrdinalIgnoreCase) => "LMStudio",
-            var value when value.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase) => "OpenRouter",
-            var value when value.Equals("NanoGPT", StringComparison.OrdinalIgnoreCase) => "NanoGPT",
-            _ => null
-        };
-    }
-
-    private static string? ResolveModel(LlmSettings settings, string provider)
-    {
-        if (settings is null)
-        {
-            return null;
-        }
-
-        return provider switch
-        {
-            "LMStudio" => settings.LMStudio?.Model,
-            "OpenRouter" => settings.OpenRouter?.Model,
-            "NanoGPT" => settings.NanoGPT?.Model,
-            _ => null
-        };
+        return true;
     }
 }

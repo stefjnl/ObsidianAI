@@ -12,37 +12,17 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // ========================================================================
-        // Configuration (Infrastructure Layer - Provider Settings)
-        // ========================================================================
-        
-        services.Configure<OpenRouterSettings>(
-            configuration.GetSection(OpenRouterSettings.SectionName));
-
+        // Configuration - NanoGPT only
         services.Configure<NanoGptSettings>(
             configuration.GetSection(NanoGptSettings.SectionName));
 
-        services.Configure<LMStudioSettings>(
-            configuration.GetSection(LMStudioSettings.SectionName));
-
-        // ========================================================================
-        // ChatAgent Concrete Registrations (serve both IChatAgent and IAIClient)
-        // ========================================================================
-        
-        // Register concrete agent types (scoped per request)
-        services.AddScoped<OpenRouterChatAgent>();
-        services.AddScoped<LmStudioChatAgent>();
+        // Register NanoGPT agent (serves both IChatAgent and IAIClient)
         services.AddScoped<NanoGptChatAgent>();
 
-        // Register keyed IChatAgent services (for agent-based workflows)
-        services.AddKeyedScoped<IChatAgent, OpenRouterChatAgent>("OpenRouter", (sp, key) => sp.GetRequiredService<OpenRouterChatAgent>());
-        services.AddKeyedScoped<IChatAgent, LmStudioChatAgent>("LMStudio", (sp, key) => sp.GetRequiredService<LmStudioChatAgent>());
+        // Register keyed IChatAgent service
         services.AddKeyedScoped<IChatAgent, NanoGptChatAgent>("NanoGPT", (sp, key) => sp.GetRequiredService<NanoGptChatAgent>());
 
-        // ========================================================================
         // Factory
-        // ========================================================================
-        
         services.AddScoped<IAIClientFactory, AIClientFactory>();
 
         return services;

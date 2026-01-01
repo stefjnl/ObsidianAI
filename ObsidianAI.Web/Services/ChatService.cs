@@ -31,24 +31,31 @@ public class ChatService : IChatService
         return Task.FromResult<IEnumerable<QuickAction>>(actions);
     }
 
-    public Task<string> GetLlmProviderAsync() => Task.FromResult(_runtimeStore.CurrentProvider);
+    public Task<string> GetCurrentModelAsync() => Task.FromResult(_runtimeStore.CurrentModel);
 
+    public Task<IReadOnlyList<ModelInfo>> GetAvailableModelsAsync() => Task.FromResult(_runtimeStore.GetAvailableModels());
+
+    public Task<ModelSwitchResult> SwitchModelAsync(string modelIdentifier)
+    {
+        if (string.IsNullOrWhiteSpace(modelIdentifier))
+        {
+            return Task.FromResult(new ModelSwitchResult(false, _runtimeStore.CurrentModel, "Model identifier is required."));
+        }
+
+        if (_runtimeStore.TrySwitchModel(modelIdentifier, out var error))
+        {
+            return Task.FromResult(new ModelSwitchResult(true, _runtimeStore.CurrentModel, null));
+        }
+
+        return Task.FromResult(new ModelSwitchResult(false, _runtimeStore.CurrentModel, error ?? "Failed to switch model."));
+    }
+
+    // Legacy method for backward compatibility
     public Task<ProviderSwitchResult> SwitchLlmProviderAsync(string providerName)
     {
-        if (string.IsNullOrWhiteSpace(providerName))
-        {
-            var failure = new ProviderSwitchResult(false, _runtimeStore.CurrentProvider, _runtimeStore.CurrentModel, "Provider name is required.");
-            return Task.FromResult(failure);
-        }
-
-        if (_runtimeStore.TrySwitchProvider(providerName, out var model, out var error))
-        {
-            var success = new ProviderSwitchResult(true, _runtimeStore.CurrentProvider, model, null);
-            return Task.FromResult(success);
-        }
-
-        var result = new ProviderSwitchResult(false, _runtimeStore.CurrentProvider, _runtimeStore.CurrentModel, error ?? "Failed to switch provider.");
-        return Task.FromResult(result);
+        // NanoGPT is the only provider - treat as no-op
+        _runtimeStore.TrySwitchProvider(providerName, out var model, out var error);
+        return Task.FromResult(new ProviderSwitchResult(true, "NanoGPT", model, null));
     }
 
     public async Task<Guid> CreateConversationAsync()

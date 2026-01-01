@@ -1,13 +1,16 @@
 @using System
+@using ObsidianAI.Domain.Ports
 @using ObsidianAI.Web.Models
 
 <div class="header">
     <div class="header-main">
         <h1>🧠 Obsidian AI</h1>
         <div class="header-actions">
-            <select class="provider-select" @bind="SelectedProvider" @bind:event="onchange">
-                <option value="NanoGPT">NanoGPT</option>
-                <option value="OpenRouter">OpenRouter</option>
+            <select class="model-select" @bind="SelectedModel" @bind:event="onchange">
+                @foreach (var model in AvailableModels)
+                {
+                    <option value="@model.Identifier">@model.Name</option>
+                }
             </select>
             <button class="btn-icon" type="button" aria-label="Open Vault" @onclick="OnVaultClick">📁 Vault</button>
             <button class="btn-icon" type="button" aria-label="Open Settings" @onclick="OnSettingsClick">⚙️</button>
@@ -84,26 +87,29 @@
     public EventCallback OnHistoryClick { get; set; }
 
     [Parameter]
-    public string CurrentProvider { get; set; } = "NanoGPT";
+    public string CurrentModel { get; set; } = string.Empty;
 
     [Parameter]
-    public EventCallback<string> OnProviderChanged { get; set; }
+    public IReadOnlyList<ModelInfo> AvailableModels { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<string> OnModelChanged { get; set; }
 
     private bool isEditingTitle;
     private string editableTitle = string.Empty;
-    private string selectedProvider = "OpenRouter";
+    private string selectedModel = string.Empty;
 
-    private string SelectedProvider
+    private string SelectedModel
     {
-        get => selectedProvider;
+        get => selectedModel;
         set
         {
-            if (selectedProvider != value)
+            if (selectedModel != value)
             {
-                selectedProvider = value;
-                if (OnProviderChanged.HasDelegate)
+                selectedModel = value;
+                if (OnModelChanged.HasDelegate)
                 {
-                    _ = OnProviderChanged.InvokeAsync(value);
+                    _ = OnModelChanged.InvokeAsync(value);
                 }
             }
         }
@@ -115,11 +121,11 @@
         {
             editableTitle = Conversation.Title;
         }
-        
-        // Initialize selected provider from parameter when it changes
-        if (!string.Equals(selectedProvider, CurrentProvider, StringComparison.OrdinalIgnoreCase))
+
+        // Initialize selected model from parameter when it changes
+        if (selectedModel != CurrentModel)
         {
-            selectedProvider = CurrentProvider;
+            selectedModel = CurrentModel;
         }
     }
 

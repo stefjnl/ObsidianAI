@@ -12,7 +12,7 @@ using System.Threading;
 namespace ObsidianAI.Infrastructure.LLM;
 
 /// <summary>
-/// Provider-agnostic factory that creates IChatAgent instances based on the runtime provider selection.
+/// Factory that creates IChatAgent instances for NanoGPT with the currently selected model.
 /// </summary>
 public class ConfiguredAIAgentFactory : IAIAgentFactory
 {
@@ -22,13 +22,6 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
     private readonly ILogger<ConfiguredAIAgentFactory> _logger;
     private readonly ILlmProviderRuntimeStore _runtimeStore;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ConfiguredAIAgentFactory"/> class.
-    /// </summary>
-    /// <param name="options">The application settings options.</param>
-    /// <param name="configuration">The application configuration.</param>
-    /// <param name="middlewares">The function middlewares to wrap around tools.</param>
-    /// <param name="logger">The logger instance.</param>
     public ConfiguredAIAgentFactory(
         IOptions<AppSettings> options,
         IConfiguration configuration,
@@ -52,18 +45,15 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
     }
 
     /// <inheritdoc />
-    public string ProviderName => _runtimeStore.CurrentProvider;
+    public string ProviderName => "NanoGPT";
 
     /// <inheritdoc />
-    public string GetModelName()
-    {
-        return _runtimeStore.CurrentModel;
-    }
+    public string GetModelName() => _runtimeStore.CurrentModel;
 
     /// <inheritdoc />
     public async Task<IChatAgent> CreateAgentAsync(
         string instructions,
-        System.Collections.Generic.IEnumerable<object>? tools = null,
+        IEnumerable<object>? tools = null,
         IAgentThreadProvider? threadProvider = null,
         CancellationToken cancellationToken = default)
     {
@@ -73,18 +63,17 @@ public class ConfiguredAIAgentFactory : IAIAgentFactory
                    .WithMiddleware(_middlewares.ToArray())
                    .Cast<object>()
             : tools;
-        var provider = ProviderName;
-        _logger.LogDebug("Creating chat agent for provider {Provider} with {ToolCount} tools", provider, wrappedTools?.Count() ?? 0);
 
-        return provider switch
-        {
-            var name when name.Equals("LMStudio", StringComparison.OrdinalIgnoreCase)
-                => await LmStudioChatAgent.CreateAsync(_options, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false),
-            var name when name.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase)
-                => await OpenRouterChatAgent.CreateAsync(_options, _configuration, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false),
-            var name when name.Equals("NanoGPT", StringComparison.OrdinalIgnoreCase)
-                => await NanoGptChatAgent.CreateAsync(_options, _configuration, instructions, wrappedTools, threadProvider, cancellationToken).ConfigureAwait(false),
-            _ => throw new InvalidOperationException($"Unsupported LLM provider '{provider}'.")
-        };
+        var model = _runtimeStore.CurrentModel;
+        _logger.LogDebug("Creating NanoGPT agent with model {Model} and {ToolCount} tools", model, wrappedTools?.Count() ?? 0);
+
+        return await NanoGptChatAgent.CreateAsync(
+            _options,
+            _configuration,
+            instructions,
+            wrappedTools,
+            threadProvider,
+            model,
+            cancellationToken).ConfigureAwait(false);
     }
 }

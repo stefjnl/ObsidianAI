@@ -1,3 +1,4 @@
+using ObsidianAI.Domain.Ports;
 using ObsidianAI.Web.Models;
 
 namespace ObsidianAI.Web.Services;
@@ -8,7 +9,9 @@ namespace ObsidianAI.Web.Services;
 public interface IChatService
 {
     Task<IEnumerable<QuickAction>> GetQuickActionsAsync();
-    Task<string> GetLlmProviderAsync();
+    Task<string> GetCurrentModelAsync();
+    Task<IReadOnlyList<ModelInfo>> GetAvailableModelsAsync();
+    Task<ModelSwitchResult> SwitchModelAsync(string modelIdentifier);
     Task<Guid> CreateConversationAsync();
     Task<IEnumerable<ConversationSummary>> ListConversationsAsync();
     Task<ConversationDetail> LoadConversationAsync(Guid conversationId);
@@ -20,5 +23,7 @@ public interface IChatService
     Task<ReorganizeResponse> ReorganizeAsync(ReorganizeRequest request);
     Task UpdateMessageArtifactsAsync(Guid messageId, ArtifactUpdateRequest update);
     Task<VaultBrowserResponse> BrowseVaultAsync(string? path = null);
+
+    // Legacy method for backward compatibility
     Task<ProviderSwitchResult> SwitchLlmProviderAsync(string providerName);
 }

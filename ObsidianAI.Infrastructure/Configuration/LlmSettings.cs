@@ -1,27 +1,17 @@
 namespace ObsidianAI.Infrastructure.Configuration;
 
 /// <summary>
-/// LLM settings containing provider and specific provider configurations.
+/// LLM settings - NanoGPT is the sole provider.
 /// </summary>
 public class LlmSettings
 {
     /// <summary>
-    /// The LLM provider to use (e.g., "LMStudio" or "OpenRouter").
+    /// The LLM provider (always "NanoGPT").
     /// </summary>
-    public required string Provider { get; set; }
+    public string Provider { get; set; } = "NanoGPT";
 
     /// <summary>
-    /// LMStudio-specific configuration.
+    /// NanoGPT configuration with multi-model support.
     /// </summary>
-    public required LMStudioSettings LMStudio { get; set; }
-
-    /// <summary>
-    /// OpenRouter-specific configuration.
-    /// </summary>
-    public required OpenRouterSettings OpenRouter { get; set; }
-
-    /// <summary>
-    /// NanoGPT-specific configuration.
-    /// </summary>
-    public NanoGptSettings? NanoGPT { get; set; }
+    public NanoGptSettings NanoGPT { get; set; } = new();
 }

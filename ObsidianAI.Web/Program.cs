@@ -126,52 +126,28 @@ if (appSettings == null)
     throw new InvalidOperationException("AppSettings configuration is missing or invalid.");
 }
 
-var provider = appSettings.LLM.Provider?.Trim() ?? "LMStudio";
-if (provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase))
+// NanoGPT is the sole provider - validate its configuration
+var nanoGptSettings = appSettings.LLM.NanoGPT;
+if (nanoGptSettings == null)
 {
-    var apiKey = builder.Configuration["OpenRouter:ApiKey"];
-    if (string.IsNullOrEmpty(apiKey))
-    {
-        throw new InvalidOperationException(
-            "OpenRouter API key is not configured. " +
-            "Set it via user secrets (dotnet user-secrets set \"OpenRouter:ApiKey\" \"your-key\") " +
-            "or environment variable OpenRouter__ApiKey.");
-    }
+    throw new InvalidOperationException("NanoGPT configuration is missing.");
 }
-else if (provider.Equals("LMStudio", StringComparison.OrdinalIgnoreCase))
-{
-    var apiKey = appSettings.LLM.LMStudio?.ApiKey?.Trim();
-    if (string.IsNullOrEmpty(apiKey))
-    {
-        throw new InvalidOperationException(
-            "LMStudio API key is not configured. " +
-            "Set it via user secrets (dotnet user-secrets set \"LLM:LMStudio:ApiKey\" \"your-key\") " +
-            "or environment variable LLM__LMStudio__ApiKey.");
-    }
-}
-else if (provider.Equals("NanoGPT", StringComparison.OrdinalIgnoreCase))
-{
-    // NanoGPT validation - API key is optional for local deployments
-    var endpoint = appSettings.LLM.NanoGPT?.Endpoint?.Trim();
-    if (string.IsNullOrEmpty(endpoint))
-    {
-        throw new InvalidOperationException(
-            "NanoGPT endpoint is not configured. " +
-            "Set it via appsettings.json or environment variable LLM__NanoGPT__Endpoint.");
-    }
-    var apiKey = builder.Configuration["NanoGpt:ApiKey"];
-    if (string.IsNullOrEmpty(apiKey))
-    {
-        throw new InvalidOperationException(
-            "NanoGPT API key is not configured. " +
-            "Set it via user secrets (dotnet user-secrets set \"NanoGpt:ApiKey\" \"your-key\") " +
-            "or environment variable NanoGpt__ApiKey.");
-    }
-}
-else
+
+var endpoint = nanoGptSettings.Endpoint?.Trim();
+if (string.IsNullOrEmpty(endpoint))
 {
     throw new InvalidOperationException(
-        $"Unknown LLM provider '{provider}'. Supported providers: LMStudio, OpenRouter, NanoGPT.");
+        "NanoGPT endpoint is not configured. " +
+        "Set it via appsettings.json or environment variable LLM__NanoGPT__Endpoint.");
+}
+
+var apiKey = builder.Configuration["NanoGpt:ApiKey"];
+if (string.IsNullOrEmpty(apiKey))
+{
+    throw new InvalidOperationException(
+        "NanoGPT API key is not configured. " +
+        "Set it via user secrets (dotnet user-secrets set \"NanoGpt:ApiKey\" \"your-key\") " +
+        "or environment variable NanoGpt__ApiKey.");
 }
 
 var app = builder.Build();

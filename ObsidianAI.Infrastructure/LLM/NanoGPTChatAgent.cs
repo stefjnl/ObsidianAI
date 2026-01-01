@@ -24,7 +24,7 @@ public sealed class NanoGptChatAgent : BaseChatAgent, IChatAgent, IAIClient
     public NanoGptChatAgent(
         IOptions<AppSettings> appOptions,
         IConfiguration configuration)
-        : this(appOptions, configuration, string.Empty, null, null)
+        : this(appOptions, configuration, string.Empty, null, null, null)
     {
     }
 
@@ -36,18 +36,19 @@ public sealed class NanoGptChatAgent : BaseChatAgent, IChatAgent, IAIClient
         IConfiguration configuration,
         string instructions,
         IEnumerable<object>? tools,
-        IAgentThreadProvider? threadProvider)
+        IAgentThreadProvider? threadProvider,
+        string? modelOverride)
         : base(
-            CreateChatClient(appOptions, configuration),
+            CreateChatClient(appOptions, configuration, modelOverride),
             "NanoGptAgent",
             instructions,
             tools,
             threadProvider,
-            (appOptions.Value.LLM.NanoGPT ?? new NanoGptSettings()).Model ?? "nanogpt-model")
+            modelOverride ?? appOptions.Value.LLM.NanoGPT.DefaultModel)
     {
     }
 
-    private static IChatClient CreateChatClient(IOptions<AppSettings> appOptions, IConfiguration configuration)
+    private static IChatClient CreateChatClient(IOptions<AppSettings> appOptions, IConfiguration configuration, string? modelOverride = null)
     {
         var nanoGptSettings = appOptions.Value.LLM.NanoGPT ?? new NanoGptSettings();
         var endpoint = nanoGptSettings.Endpoint?.Trim();
@@ -62,7 +63,7 @@ public sealed class NanoGptChatAgent : BaseChatAgent, IChatAgent, IAIClient
             throw new InvalidOperationException("NanoGPT API key is not configured. Set NanoGpt:ApiKey via user secrets or environment variables.");
         }
 
-        var model = nanoGptSettings.Model;
+        var model = modelOverride ?? nanoGptSettings.DefaultModel;
         var client = new OpenAI.OpenAIClient(
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAI.OpenAIClientOptions { Endpoint = new Uri(endpoint) });
@@ -76,9 +77,10 @@ public sealed class NanoGptChatAgent : BaseChatAgent, IChatAgent, IAIClient
         string instructions,
         IEnumerable<object>? tools = null,
         IAgentThreadProvider? threadProvider = null,
+        string? modelOverride = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new NanoGptChatAgent(appOptions, configuration, instructions, tools, threadProvider));
+        return Task.FromResult(new NanoGptChatAgent(appOptions, configuration, instructions, tools, threadProvider, modelOverride));
     }
 
     // ========================================================================

@@ -4,6 +4,9 @@ using ObsidianAI.Domain.Ports;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 
+/// <summary>
+/// Factory for AI clients - NanoGPT is the sole provider.
+/// </summary>
 public class AIClientFactory : IAIClientFactory
 {
     private readonly IServiceProvider _serviceProvider;
@@ -19,33 +22,22 @@ public class AIClientFactory : IAIClientFactory
 
     public IAIClient? GetClient(string providerName)
     {
-        // Use service locator pattern to resolve concrete agent by provider name
-        var client = providerName switch
+        // NanoGPT is the sole provider - all requests go to NanoGPT
+        if (!string.Equals(providerName, "NanoGPT", StringComparison.OrdinalIgnoreCase))
         {
-            "OpenRouter" => _serviceProvider.GetRequiredService<OpenRouterChatAgent>() as IAIClient,
-            "LMStudio" => _serviceProvider.GetRequiredService<LmStudioChatAgent>() as IAIClient,
-            "NanoGPT" => _serviceProvider.GetRequiredService<NanoGptChatAgent>() as IAIClient,
-            _ => null
-        };
-        
-        if (client == null)
-        {
-            _logger.LogWarning("Provider {Provider} not found", providerName);
+            _logger.LogWarning("Provider {Provider} requested but NanoGPT is the only provider. Using NanoGPT.", providerName);
         }
-        
-        return client;
+
+        return _serviceProvider.GetRequiredService<NanoGptChatAgent>() as IAIClient;
     }
 
     public IEnumerable<IAIClient> GetAllClients()
     {
-        // Return all registered agent-backed clients
-        yield return _serviceProvider.GetRequiredService<OpenRouterChatAgent>();
-        yield return _serviceProvider.GetRequiredService<LmStudioChatAgent>();
         yield return _serviceProvider.GetRequiredService<NanoGptChatAgent>();
     }
 
     public async Task<IEnumerable<string>> GetModelsAsync(
-        string providerName, 
+        string providerName,
         CancellationToken cancellationToken = default)
     {
         var client = GetClient(providerName);
@@ -53,14 +45,14 @@ public class AIClientFactory : IAIClientFactory
         {
             return Enumerable.Empty<string>();
         }
-        
+
         try
         {
             return await client.GetModelsAsync(cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get models for {Provider}", providerName);
+            _logger.LogError(ex, "Failed to get models for NanoGPT");
             return Enumerable.Empty<string>();
         }
     }

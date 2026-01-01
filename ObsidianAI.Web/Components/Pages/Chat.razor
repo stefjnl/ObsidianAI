@@ -1,6 +1,7 @@
 @page "/"
 @rendermode InteractiveServer
 @implements IAsyncDisposable
+@using ObsidianAI.Domain.Ports
 @using ObsidianAI.Web.Models
 @using ObsidianAI.Web.Services
 @using ObsidianAI.Web.Components.Shared
@@ -29,8 +30,9 @@
             OnVaultClick="OpenVault"
             OnSettingsClick="OpenSettings"
             OnHistoryClick="ShowHistory"
-            CurrentProvider="@llmProvider"
-            OnProviderChanged="HandleProviderChangedAsync" />
+            CurrentModel="@currentModel"
+            AvailableModels="@availableModels"
+            OnModelChanged="HandleModelChangedAsync" />
 
 @if (!string.IsNullOrEmpty(providerStatusMessage))
 {
@@ -40,8 +42,7 @@
     </div>
 }
 
-<PrivacyWarning IsVisible="@(isOpenRouter && !isPrivacyWarningDismissed)" 
-                OnDismiss="DismissPrivacyWarning" />
+@* Privacy warning removed - NanoGPT is now the sole provider *@
 
 @if (isSidebarOpen)
 {
@@ -86,8 +87,8 @@
     private bool isProcessing = false;
     private bool isStreaming = false;
     private ChatMessage? currentAiMessage;
-    private string llmProvider = string.Empty;
-    private bool isOpenRouter = false;
+    private string currentModel = string.Empty;
+    private IReadOnlyList<ModelInfo> availableModels = [];
     private bool isPrivacyWarningDismissed = false;
     private int tokenBatchCount = 0;
     private const int TokenBatchSize = 3;
@@ -334,13 +335,12 @@
 
     private async Task FetchLlmProvider()
     {
-        var provider = await ChatService.GetLlmProviderAsync();
-        llmProvider = provider;
-        isOpenRouter = string.Equals(provider, "OpenRouter", StringComparison.OrdinalIgnoreCase);
+        currentModel = await ChatService.GetCurrentModelAsync();
+        availableModels = await ChatService.GetAvailableModelsAsync();
         StateHasChanged();
     }
 
-    private async Task HandleProviderChangedAsync(string provider)
+    private async Task HandleModelChangedAsync(string modelIdentifier)
     {
         providerStatusCts?.Cancel();
         providerStatusCts?.Dispose();
@@ -348,14 +348,14 @@
 
         try
         {
-            var result = await ChatService.SwitchLlmProviderAsync(provider);
-            llmProvider = result.ActiveProvider;
-            isOpenRouter = string.Equals(result.ActiveProvider, "OpenRouter", StringComparison.OrdinalIgnoreCase);
+            var result = await ChatService.SwitchModelAsync(modelIdentifier);
+            currentModel = result.ActiveModel;
 
             providerStatusIsError = !result.Success;
+            var modelName = availableModels.FirstOrDefault(m => m.Identifier == result.ActiveModel)?.Name ?? result.ActiveModel;
             providerStatusMessage = result.Success
-                ? $"Switched to {result.ActiveProvider} ({result.ActiveModel}). New requests will use this provider."
-                : result.ErrorMessage ?? $"Failed to switch provider to {provider}.";
+                ? $"Switched to {modelName}. New requests will use this model."
+                : result.ErrorMessage ?? $"Failed to switch to model {modelIdentifier}.";
 
             await InvokeAsync(StateHasChanged);
 
@@ -367,9 +367,9 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to switch LLM provider to {Provider}", provider);
+            Logger.LogError(ex, "Failed to switch model to {Model}", modelIdentifier);
             providerStatusIsError = true;
-            providerStatusMessage = "Failed to switch provider. Check server logs for details.";
+            providerStatusMessage = "Failed to switch model. Check server logs for details.";
             await InvokeAsync(StateHasChanged);
 
             providerStatusCts = new CancellationTokenSource();
@@ -869,14 +869,13 @@
 
     private void AddOptimisticConversationSummary(Guid conversationId)
     {
-        var provider = string.IsNullOrWhiteSpace(llmProvider) ? "Assistant" : llmProvider;
         var summary = new ConversationSummary(
             conversationId,
             BuildDefaultConversationTitle(),
             DateTime.UtcNow,
             0,
-            provider,
-            currentConversationMetadata?.ModelName ?? string.Empty);
+            "NanoGPT",
+            currentModel);
 
         UpsertConversationSummary(summary);
         StateHasChanged();
@@ -902,8 +901,8 @@
             return;
         }
 
-        var provider = currentConversationMetadata?.Provider ?? (string.IsNullOrWhiteSpace(llmProvider) ? "Assistant" : llmProvider);
-        var modelName = currentConversationMetadata?.ModelName ?? string.Empty;
+        var provider = currentConversationMetadata?.Provider ?? "NanoGPT";
+        var modelName = currentConversationMetadata?.ModelName ?? currentModel;
         var title = currentConversationMetadata?.Title ?? BuildDefaultConversationTitle();
         var updatedAt = currentConversationMetadata?.UpdatedAt ?? DateTime.UtcNow;
 
