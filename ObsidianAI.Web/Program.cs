@@ -69,27 +69,54 @@ builder.Services.AddHealthChecks()
 // Register VaultResizeService for UI resize functionality
 builder.Services.AddScoped<IVaultResizeService, VaultResizeService>();
 
-// Register HTTP client-based services for Blazor components
-// Use environment variable for base URL to support both local and containerized deployments
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:8080";
-builder.Services.AddHttpClient<IChatService, ChatService>(client =>
+// Register HTTP client-based services for Blazor Server components
+// The Web project hosts both UI and API endpoints, so we configure HttpClient
+// to call the same server using the current request's base URL
+builder.Services.AddHttpClient<IChatService, ChatService>((sp, client) =>
 {
-    client.BaseAddress = new Uri(apiBaseUrl);
+    var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+    var request = accessor.HttpContext?.Request;
+    if (request != null)
+    {
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+        client.BaseAddress = new Uri(baseUrl);
+    }
 });
-builder.Services.AddHttpClient<IVaultService, VaultService>(client =>
+
+builder.Services.AddHttpClient<IVaultService, VaultService>((sp, client) =>
 {
-    client.BaseAddress = new Uri(apiBaseUrl);
+    var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+    var request = accessor.HttpContext?.Request;
+    if (request != null)
+    {
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+        client.BaseAddress = new Uri(baseUrl);
+    }
 });
-builder.Services.AddHttpClient("ObsidianAI.Api", client =>
+
+builder.Services.AddHttpClient("ObsidianAI.Api", (sp, client) =>
 {
-    client.BaseAddress = new Uri(apiBaseUrl);
+    var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+    var request = accessor.HttpContext?.Request;
+    if (request != null)
+    {
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+        client.BaseAddress = new Uri(baseUrl);
+    }
 });
 
 // Configure default HttpClient for Blazor components
 builder.Services.AddScoped(sp =>
 {
-    var httpClient = new HttpClient { BaseAddress = new Uri(apiBaseUrl) };
-    return httpClient;
+    var accessor = sp.GetRequiredService<IHttpContextAccessor>();
+    var request = accessor.HttpContext?.Request;
+    if (request != null)
+    {
+        var baseUrl = $"{request.Scheme}://{request.Host}";
+        return new HttpClient { BaseAddress = new Uri(baseUrl) };
+    }
+    // Fallback for non-HTTP contexts
+    return new HttpClient();
 });
 
 // Validate required configuration on startup

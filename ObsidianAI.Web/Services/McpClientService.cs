@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
@@ -16,10 +17,12 @@ namespace ObsidianAI.Web.Services
     {
         private readonly Lazy<Task<McpClient?>> _clientTask;
         private readonly ILogger<McpClientService> _logger;
+        private readonly IConfiguration _configuration;
 
-        public McpClientService(ILogger<McpClientService> logger)
+        public McpClientService(ILogger<McpClientService> logger, IConfiguration configuration)
         {
             _logger = logger;
+            _configuration = configuration;
 
             // Lazy<T> with ExecutionAndPublication ensures thread-safe, single initialization
             // The factory will only execute once, even under concurrent access
@@ -71,10 +74,13 @@ namespace ObsidianAI.Web.Services
         {
             try
             {
-                var mcpEndpoint = Environment.GetEnvironmentVariable("MCP_ENDPOINT");
+                // Try environment variable first (for Aspire/Docker), then fall back to configuration
+                var mcpEndpoint = Environment.GetEnvironmentVariable("MCP_ENDPOINT") 
+                    ?? _configuration["Mcp:Endpoint"];
+                
                 if (string.IsNullOrEmpty(mcpEndpoint))
                 {
-                    _logger.LogWarning("MCP_ENDPOINT environment variable not set. MCP functionality will be disabled.");
+                    _logger.LogWarning("MCP_ENDPOINT environment variable or Mcp:Endpoint configuration not set. MCP functionality will be disabled.");
                     return null;
                 }
 
@@ -84,7 +90,10 @@ namespace ObsidianAI.Web.Services
                 };
 
                 var httpClient = new System.Net.Http.HttpClient();
-                var authToken = Environment.GetEnvironmentVariable("MCP_GATEWAY_AUTH_TOKEN");
+                // Try environment variable first (for Aspire/Docker), then fall back to configuration
+                var authToken = Environment.GetEnvironmentVariable("MCP_GATEWAY_AUTH_TOKEN")
+                    ?? _configuration["Mcp:AuthToken"];
+                
                 if (!string.IsNullOrEmpty(authToken))
                 {
                     httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {authToken}");
